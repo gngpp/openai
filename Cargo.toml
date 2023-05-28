@@ -2,7 +2,7 @@
 name = "opengpt"
 version = "0.1.0"
 edition = "2021"
-description = "Base on openai"
+description = "OpenGPT - A command-line interface to ChatGPT\nGithub: https://github.com/gngpp/opengpt"
 license = "MIT"
 homepage = "https://github.com/gngpp/opengpt"
 repository = "https://github.com/gngpp/opengpt.git"
@@ -20,6 +20,8 @@ reqwest = { version = "0.11.17", default-features = false, features = ["json", "
 tokio = { version = "1.23.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "macros", "parking_lot", "fs"] }
 serde_json = "1.0.81"
 time = { version = "0.3", features = ["formatting", "parsing"] }
+regex = "1.8.2"
+async-recursion = "1.0.4"
 
 [profile.dev]
 opt-level = 'z'
