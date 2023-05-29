@@ -1,4 +1,5 @@
-use clap::{command, Parser, Subcommand};
+use anyhow::Context;
+use clap::{Parser, Subcommand};
 use std::{io::Write, sync::Once};
 
 pub mod openai;
@@ -7,24 +8,19 @@ pub mod openai;
 #[clap(author, version, about, arg_required_else_help = true)]
 struct Opt {
     /// Enable debug
-    #[clap(long, global = true, value_parser = initialize_log)]
+    #[clap(long, global = true, env = "OPENGPT_DEBUG", value_parser = initialize_log)]
     debug: bool,
 
-    /// Proxy. Format: protocol://user:pass@ip:port
-    #[clap(short, long)]
-    proxy: Option<String>,
+    /// HTTP Proxy. Format: protocol://user:pass@ip:port
+    #[clap(short, long, env = "OPENGPT_PROXY", value_parser = parse_proxy_url)]
+    proxy: Option<url::Url>,
 
     /// OpenAI gpt-3.5-turbo chat api, Note: OpenAI will bill you
-    #[clap(short = 'T', long, env = "OPENGPT_TOKEN")]
-    turbo: Option<String>,
+    #[clap(short, long, env = "OPENGPT_TURBO")]
+    turbo: bool,
 
     /// OpenAI account email, Format: gngppz@gmail.com
-    #[arg(
-        short = 'E',
-        long,
-        env = "OPENGPT_EMAIL",
-        requires = "password",
-    )]
+    #[arg(short = 'E', long, env = "OPENGPT_EMAIL", requires = "password")]
     email: Option<String>,
 
     /// OpenAI account password
@@ -40,10 +36,10 @@ enum SubCommands {
     /// Start proxy server
     Server {
         /// Server Listen host
-        #[clap(short = 'H', long, default_value = "0.0.0.0", value_parser = parser_host)]
+        #[clap(short = 'H', long, default_value = "0.0.0.0", value_parser = parse_host)]
         host: std::net::IpAddr,
         /// Server Listen port
-        #[clap(short = 'P', long, default_value = "7999", value_parser = parser_port_in_range)]
+        #[clap(short = 'P', long, default_value = "7999", value_parser = parse_port_in_range)]
         port: u16,
     },
     /// Start configuration
@@ -56,9 +52,7 @@ enum SubCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let opt = Opt::parse();
-    println!("{:#?}", opt);
-    println!("Hello, world!");
+    let _opt = Opt::parse();
     Ok(())
 }
 
@@ -88,8 +82,8 @@ fn initialize_log(s: &str) -> anyhow::Result<bool> {
 
 const PORT_RANGE: std::ops::RangeInclusive<usize> = 1024..=65535;
 
-// port range parser
-fn parser_port_in_range(s: &str) -> anyhow::Result<u16> {
+// port range parse
+fn parse_port_in_range(s: &str) -> anyhow::Result<u16> {
     let port: usize = s
         .parse()
         .map_err(|_| anyhow::anyhow!(format!("`{}` isn't a port number", s)))?;
@@ -103,10 +97,22 @@ fn parser_port_in_range(s: &str) -> anyhow::Result<u16> {
     ))
 }
 
-// address parser
-fn parser_host(s: &str) -> anyhow::Result<std::net::IpAddr> {
+// address parse
+fn parse_host(s: &str) -> anyhow::Result<std::net::IpAddr> {
     let addr = s
         .parse::<std::net::IpAddr>()
         .map_err(|_| anyhow::anyhow!(format!("`{}` isn't a ip address", s)))?;
     Ok(addr)
+}
+
+fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<url::Url> {
+    let url = url::Url::parse(proxy_url)
+        .context("The Proxy Url format must be `protocol://user:pass@ip:port`")?;
+    let protocol = url.scheme().to_string();
+    match protocol.as_str() {
+        "http" => "80".to_string(),
+        "https" => "443".to_string(),
+        _ => anyhow::bail!("Unsupported protocol: {}", protocol),
+    };
+    Ok(url)
 }
