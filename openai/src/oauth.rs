@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use anyhow::Error;
 use async_recursion::async_recursion;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -171,7 +170,7 @@ impl OpenAIOAuth {
 
         let code = url_params
             .get("code")
-            .ok_or(Error::from(OAuthError::FailedCallbackCode))?[0]
+            .ok_or(OAuthError::FailedCallbackCode)?[0]
             .to_string();
         Ok(code)
     }
@@ -186,29 +185,29 @@ impl OpenAIOAuth {
             let split_jwt_strings: Vec<_> = id_token.split('.').collect();
             let jwt_body = split_jwt_strings
                 .get(1)
-                .ok_or(Error::from(OAuthError::InvalidToken))?;
+                .ok_or(OAuthError::InvalidAccessToken)?;
             let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
             let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
             let user_info = serde_json::from_str::<OpenAIUserInfo>(&converted_jwt_body)?;
             return Ok(user_info);
         }
-        anyhow::bail!(Error::from(OAuthError::FailedLoginIn))
+        anyhow::bail!(OAuthError::FailedLoginIn)
     }
 
     pub async fn authenticate(&mut self) -> OAuthResult<String> {
         if self.cache
             && self.access_token.is_some()
             && self.expires.is_some()
-            && self.expires.ok_or(Error::from(OAuthError::TokenExipired))? > chrono::Utc::now()
+            && self.expires.ok_or(OAuthError::TokenExipired)? > chrono::Utc::now()
         {
             return Ok(self
                 .access_token
                 .clone()
-                .ok_or(Error::from(OAuthError::FailedLoginIn))?);
+                .ok_or(OAuthError::FailedLoginIn)?);
         }
 
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
-            anyhow::bail!(Error::from(OAuthError::InvalidEmailOrPassword))
+            anyhow::bail!(OAuthError::InvalidEmailOrPassword)
         }
 
         self.login().await
@@ -231,7 +230,7 @@ impl OpenAIOAuth {
             let state = Self::get_callback_state(resp.url());
             self.identifier_handler(&code_verifier, &state).await
         } else {
-            anyhow::bail!(Error::from(OAuthError::InvalidLoginUrl))
+            anyhow::bail!(OAuthError::InvalidLoginUrl)
         }
     }
 
@@ -271,12 +270,12 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .ok_or(Error::from(OAuthError::InvalidLocation))?
+                .ok_or(OAuthError::InvalidLocation)?
                 .to_str()?;
             self.login_handler0(code_verifier, state, location, &url)
                 .await
         } else {
-            anyhow::bail!(Error::from(OAuthError::InvalidEmail))
+            anyhow::bail!(OAuthError::InvalidEmail)
         }
     }
 
@@ -308,16 +307,16 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .ok_or(Error::from(OAuthError::InvalidLocation))?
+                .ok_or(OAuthError::InvalidLocation)?
                 .to_str()?;
             if !location.starts_with("/authorize/resume?") {
-                anyhow::bail!(Error::from(OAuthError::FailedLogin))
+                anyhow::bail!(OAuthError::FailedLogin)
             }
             self.login_handler1(code_verifier, location, &url).await
         } else if resp.status().is_client_error() {
-            anyhow::bail!(Error::from(OAuthError::InvalidEmailOrPassword))
+            anyhow::bail!(OAuthError::InvalidEmailOrPassword)
         } else {
-            anyhow::bail!(Error::from(OAuthError::FailedLogin))
+            anyhow::bail!(OAuthError::FailedLogin)
         }
     }
 
@@ -340,20 +339,20 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .ok_or(Error::from(OAuthError::InvalidLocation))?
+                .ok_or(OAuthError::InvalidLocation)?
                 .to_str()?;
             if location.starts_with("/u/mfa-otp-challenge?") {
                 if self.mfa.is_none() {
-                    anyhow::bail!(Error::from(OAuthError::MFARequired))
+                    anyhow::bail!(OAuthError::MFARequired)
                 }
                 return self.login_handler2(code_verifier, location).await;
             } else if !location.starts_with(OPENAI_OAUTH_CALLBACK_URL) {
-                anyhow::bail!("[OpenAIAuth0] Login callback failed.")
+                anyhow::bail!(OAuthError::FailedCallbackURL)
             } else {
                 return self.do_get_access_token(code_verifier, location).await;
             }
         }
-        anyhow::bail!(Error::from(OAuthError::FailedLogin))
+        anyhow::bail!(OAuthError::FailedLogin)
     }
 
     #[async_recursion]
@@ -362,7 +361,7 @@ impl OpenAIOAuth {
         let state = Self::get_callback_state(&Url::parse(&url)?);
         let data = json!({
             "state": state,
-            "code": self.mfa.clone().ok_or(Error::from(OAuthError::MFARequired))?,
+            "code": self.mfa.clone().ok_or(OAuthError::MFARequired)?,
             "action": "default"
         });
 
@@ -386,20 +385,20 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .ok_or(Error::from(OAuthError::InvalidLocation))?
+                .ok_or(OAuthError::InvalidLocation)?
                 .to_str()?;
 
             if location.starts_with("/authorize/resume?") {
                 if self.mfa.is_none() {
-                    anyhow::bail!(Error::from(OAuthError::MFAFailed))
+                    anyhow::bail!(OAuthError::MFAFailed)
                 }
             }
             return self.login_handler1(code_verifier, location, &url).await;
         }
         if status.is_client_error() {
-            anyhow::bail!(Error::from(OAuthError::InvalidMFACode))
+            anyhow::bail!(OAuthError::InvalidMFACode)
         }
-        anyhow::bail!(Error::from(OAuthError::FailedLogin))
+        anyhow::bail!(OAuthError::FailedLogin)
     }
 
     async fn do_get_access_token(
@@ -440,7 +439,7 @@ impl OpenAIOAuth {
             self.id_token = Some(result.id_token);
             return Ok(access_token);
         }
-        anyhow::bail!(Error::from(OAuthError::FailedLogin))
+        anyhow::bail!(OAuthError::FailedLogin)
     }
 
     pub async fn do_refresh_token(&mut self) -> OAuthResult<String> {
@@ -473,7 +472,7 @@ impl OpenAIOAuth {
             self.id_token = Some(result.id_token);
             return Ok(token);
         }
-        anyhow::bail!(Error::from(resp.json::<OAuthError>().await?))
+        anyhow::bail!(resp.json::<OAuthError>().await?)
     }
 
     pub async fn do_revoke_token(&mut self) -> OAuthResult<()> {
@@ -492,7 +491,7 @@ impl OpenAIOAuth {
             .send()
             .await?;
         if !resp.status().is_success() {
-            anyhow::bail!(Error::from(resp.json::<OAuthError>().await?))
+            anyhow::bail!(resp.json::<OAuthError>().await?)
         }
         Ok(())
     }

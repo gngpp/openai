@@ -62,7 +62,7 @@ fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> anyhow::Result<()> {
     {
         return Ok(());
     }
-    anyhow::bail!(OAuthError::InvalidToken)
+    anyhow::bail!(OAuthError::InvalidAccessToken)
 }
 
 pub async fn verify_access_token(token: &str) -> anyhow::Result<()> {
