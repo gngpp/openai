@@ -18,6 +18,7 @@ url = "2.3.1"
 sha2 = "0.10.6"
 base64 = "0.21.2"
 rand = "0.8.5"
+jsonwebtokens = "1"
 
 [lib]
 name = "openai"
