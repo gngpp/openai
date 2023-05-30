@@ -12,6 +12,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.71"
+thiserror = "1.0"
 log = "0.4.17"
 env_logger = "0.10.0"
 chrono = "0.4.22"

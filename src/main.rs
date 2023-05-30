@@ -13,7 +13,7 @@ struct Opt {
 
     /// HTTP Proxy. Format: protocol://user:pass@ip:port
     #[clap(short, long, env = "OPENGPT_PROXY", value_parser = parse_proxy_url)]
-    proxy: Option<url::Url>,
+    proxy: Option<reqwest::Proxy>,
 
     /// OpenAI gpt-3.5-turbo chat api, Note: OpenAI will bill you
     #[clap(short, long, env = "OPENGPT_TURBO")]
@@ -52,7 +52,16 @@ enum SubCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _opt = Opt::parse();
+    // let _opt = Opt::parse();
+    let mut auth = openai::oauth::OpenAIOAuthBuilder::builder()
+        .email("xxx".to_string())
+        .password("xxx".to_string())
+        .cache(true)
+        .client_cookie_store(true)
+        .client_timeout(std::time::Duration::from_secs(20))
+        .build();
+    let token = auth.authenticate().await?;
+    println!("Token: {}", token);
     Ok(())
 }
 
@@ -105,7 +114,7 @@ fn parse_host(s: &str) -> anyhow::Result<std::net::IpAddr> {
     Ok(addr)
 }
 
-fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<url::Url> {
+fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<reqwest::Proxy> {
     let url = url::Url::parse(proxy_url)
         .context("The Proxy Url format must be `protocol://user:pass@ip:port`")?;
     let protocol = url.scheme().to_string();
@@ -114,5 +123,6 @@ fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<url::Url> {
         "https" => "443".to_string(),
         _ => anyhow::bail!("Unsupported protocol: {}", protocol),
     };
-    Ok(url)
+
+    Ok(reqwest::Proxy::all(url.to_string())?)
 }

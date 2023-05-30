@@ -1,9 +1,10 @@
 extern crate regex;
 
 use std::collections::HashMap;
+use std::fmt::{Debug, Error};
 use std::time::Duration;
 
-use anyhow::{Context, Ok};
+use anyhow::{Context, Ok, anyhow};
 use async_recursion::async_recursion;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -13,48 +14,73 @@ use url::Url;
 
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
+use reqwest::{Client, Proxy};
 use sha2::{Digest, Sha256};
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
+const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth0.openai.com/oauth/token";
+const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
+const OPENAI_OAUTH_URL: &str = "https://auth0.openai.com";
+const OPENAI_IOS_CALLBACK: &str = "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-#[derive(Debug)]
-pub struct OpenAIAuth0 {
-    email: String,
-    session: reqwest::Client,
-    password: String,
-    mfa: Option<String>,
-    use_cache: bool,
-    req_headers: HeaderMap,
-    access_token: Option<String>,
-    refresh_token: Option<String>,
-    id_token: Option<String>,
-    expires: Option<chrono::DateTime<chrono::Utc>>,
-    email_regex: regex::Regex,
+pub type OAuthResult<T, E = anyhow::Error> =  anyhow::Result<T, E>;
+
+pub struct OpenAIOAuthBuilder {
+    client_builder: reqwest::ClientBuilder,
+    oauth: OpenAIOAuth,
 }
 
-// api: https://auth0.openai.com
-impl OpenAIAuth0 {
-    pub fn new(
-        email: String,
-        password: String,
-        proxy: Option<url::Url>,
-        use_cache: bool,
-        mfa: Option<&str>,
-    ) -> anyhow::Result<OpenAIAuth0> {
-        let mut req_headers = HeaderMap::new();
-        req_headers.insert("User-Agent", HeaderValue::from_str(UA)?);
+impl OpenAIOAuthBuilder {
+    pub fn email(mut self, email: String) -> Self {
+        self.oauth.email = email;
+        self
+    }
 
-        let mut client_builder = reqwest::Client::builder()
-            .cookie_store(true)
-            .timeout(Duration::from_secs(1000));
+    pub fn password(mut self, password: String) -> Self {
+        self.oauth.password = password;
+        self
+    }
 
-        if let Some(proxy_url) = proxy {
-            client_builder = client_builder.proxy(reqwest::Proxy::all(proxy_url.to_string())?);
+    pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
+        if let Some(proxy) = proxy {
+            self.client_builder = self.client_builder.proxy(proxy);
         } else {
-            client_builder = client_builder.no_proxy();
+            self.client_builder = self.client_builder.no_proxy();
         }
+        self
+    }
 
+    pub fn cache(mut self, cache: bool) -> Self {
+        self.oauth.cache = cache;
+        self
+    }
+
+    pub fn mfa(mut self, mfa: Option<String>) -> Self {
+        self.oauth.mfa = mfa;
+        self
+    }
+
+    pub fn client_timeout(mut self, timeout: Duration) -> Self {
+        self.client_builder = self.client_builder.timeout(timeout);
+        self
+    }
+
+    pub fn client_cookie_store(mut self, store: bool) -> Self {
+        self.client_builder = self.client_builder.cookie_store(store);
+        self
+    }
+
+    pub fn build(mut self) -> OpenAIOAuth {
+        self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
+        self.oauth
+    }
+
+    pub fn builder() -> OpenAIOAuthBuilder {
+        let mut req_headers = HeaderMap::new();
+        req_headers.insert("User-Agent", HeaderValue::from_static(UA));
+
+        let mut client_builder = Client::builder();
         client_builder = client_builder.redirect(Policy::custom(|attempt| {
             if attempt
                 .url()
@@ -68,21 +94,43 @@ impl OpenAIAuth0 {
             }
         }));
 
-        Ok(OpenAIAuth0 {
-            email,
-            password,
-            session: client_builder.build()?,
-            use_cache,
-            mfa: mfa.map(String::from),
-            req_headers,
-            access_token: None,
-            refresh_token: None,
-            id_token: None,
-            expires: None,
-            email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")?,
-        })
+        OpenAIOAuthBuilder {
+            client_builder,
+            oauth: OpenAIOAuth {
+                email: String::new(),
+                password: String::new(),
+                session: Client::new(),
+                cache: false,
+                mfa: None,
+                req_headers,
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                expires: None,
+                email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
+                    .expect("Regex::new()"),
+            },
+        }
     }
+}
 
+#[derive(Debug)]
+pub struct OpenAIOAuth {
+    email: String,
+    session: Client,
+    password: String,
+    mfa: Option<String>,
+    cache: bool,
+    req_headers: HeaderMap,
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    id_token: Option<String>,
+    expires: Option<chrono::DateTime<chrono::Utc>>,
+    email_regex: Regex,
+}
+
+// api: https://auth0.openai.com
+impl OpenAIOAuth {
     fn generate_code_verifier() -> String {
         let token: [u8; 32] = rand::thread_rng().gen();
         let code_verifier = general_purpose::URL_SAFE
@@ -102,7 +150,7 @@ impl OpenAIAuth0 {
         code_challenge
     }
 
-    fn get_callback_code(url: &url::Url) -> anyhow::Result<String> {
+    fn get_callback_code(url: &Url) -> anyhow::Result<String> {
         let mut url_params = HashMap::new();
         url.query_pairs().into_owned().for_each(|(key, value)| {
             url_params
@@ -127,36 +175,34 @@ impl OpenAIAuth0 {
         Ok(code)
     }
 
-    fn get_callback_state(url: &url::Url) -> anyhow::Result<String> {
-        let url_params = url
-            .query_pairs()
-            .into_owned()
-            .collect::<std::collections::HashMap<_, _>>();
-        Ok(url_params["state"].to_owned())
+    fn get_callback_state(url: &Url) -> String {
+        let url_params = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
+        url_params["state"].to_owned()
     }
 
-    pub fn get_user_info(&self) -> anyhow::Result<crate::openai::OpenAIUserInfo> {
+    pub fn get_user_info(&self) -> OAuthResult<OpenAIUserInfo> {
         if let Some(id_token) = self.id_token.clone() {
-            let splitted_jwt_strings: Vec<_> = id_token.split('.').collect();
-            let jwt_body = splitted_jwt_strings
+            let split_jwt_strings: Vec<_> = id_token.split('.').collect();
+            let jwt_body = split_jwt_strings
                 .get(1)
                 .ok_or(anyhow::anyhow!("Could not find separator in jwt string."))?;
             let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
             let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
-            return Ok(serde_json::from_str::<crate::openai::OpenAIUserInfo>(
-                &converted_jwt_body,
-            )?);
+            let user_info = serde_json::from_str::<OpenAIUserInfo>(
+                            &converted_jwt_body,
+                        )?;
+            return Ok(user_info);
         }
         anyhow::bail!("[OpenAIAuth0] You are not logged in")
     }
 
     pub async fn authenticate(&mut self) -> anyhow::Result<String> {
-        if self.use_cache
+        if self.cache
             && self.access_token.is_some()
             && self.expires.is_some()
             && self
                 .expires
-                .context("[OpenAIAuth0] Expires proproties not exist")?
+                .context("[OpenAIAuth0] Expires properties not exist")?
                 > chrono::Utc::now()
         {
             return Ok(self
@@ -182,14 +228,11 @@ impl OpenAIAuth0 {
         let url = format!("https://auth0.openai.com/authorize?client_id={}&audience=https%3A%2F%2Fapi.openai.com%2Fv1&redirect_uri=com.openai.chat%3A%2F%2Fauth0.openai.com%2Fios%2Fcom.openai.chat%2Fcallback&scope=openid%20email%20profile%20offline_access%20model.request%20model.read%20organization.read%20offline&response_type=code&code_challenge={}&code_challenge_method=S256&prompt=login", CLIENT_ID, code_challenge);
 
         let mut headers = self.req_headers.clone();
-        headers.insert(
-            "Referer",
-            HeaderValue::from_str("https://ios.chat.openai.com/")?,
-        );
+        headers.insert("Referer", HeaderValue::from_static(OPENAI_OAUTH_URL));
         let resp = self.session.get(url).headers(headers).send().await?;
 
         if resp.status().is_success() {
-            let state = Self::get_callback_state(resp.url())?;
+            let state = Self::get_callback_state(resp.url());
             self.identifier_handler(&code_verifier, &state).await
         } else {
             anyhow::bail!("[OpenAIAuth0] Error request login url")
@@ -206,12 +249,9 @@ impl OpenAIAuth0 {
             state
         );
         let mut headers = self.req_headers.clone();
-        headers.insert("Referer", HeaderValue::from_str(&url).unwrap());
-        headers.insert(
-            "Origin",
-            HeaderValue::from_str("https://auth0.openai.com").unwrap(),
-        );
-        let data = serde_json::json!({
+        headers.insert("Referer", HeaderValue::from_str(&url)?);
+        headers.insert("Origin", HeaderValue::from_static(OPENAI_OAUTH_URL));
+        let data = json!({
             "state": state,
             "username": self.email.to_string(),
             "js-available": true,
@@ -252,9 +292,9 @@ impl OpenAIAuth0 {
         location: &str,
         referrer: &str,
     ) -> anyhow::Result<String> {
-        let url = format!("https://auth0.openai.com{}", location);
+        let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         self.req_headers
-            .insert("Referer", HeaderValue::from_str(referrer).unwrap());
+            .insert("Referer", HeaderValue::from_str(referrer)?);
         self.req_headers.remove("Origin");
         let data = json!({
             "state": state,
@@ -274,7 +314,7 @@ impl OpenAIAuth0 {
             let location = resp
                 .headers()
                 .get("Location")
-                .context("[OpenAIAuth0] Error login.")?
+                .context("[OpenAIAuth0] Error login")?
                 .to_str()?;
             if !location.starts_with("/authorize/resume?") {
                 anyhow::bail!("[OpenAIAuth0] Login failed")
@@ -294,7 +334,7 @@ impl OpenAIAuth0 {
         location: &str,
         referrer: &str,
     ) -> anyhow::Result<String> {
-        let url = format!("https://auth0.openai.com{}", location);
+        let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
         headers.insert("Referer", HeaderValue::from_str(referrer).unwrap());
         let resp = self.session.get(&url).headers(headers).send().await?;
@@ -315,15 +355,13 @@ impl OpenAIAuth0 {
                     anyhow::bail!("[OpenAIAuth0] MFA required.")
                 }
                 return self.login_handler2(code_verifier, location).await;
-            } else if !location
-                .starts_with("com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback?")
-            {
+            } else if !location.starts_with(OPENAI_IOS_CALLBACK) {
                 anyhow::bail!("[OpenAIAuth0] Login callback failed.")
             } else {
                 return self.do_get_access_token(code_verifier, location).await;
             }
         }
-        anyhow::bail!("[OpenAIAuth0] Error login.")
+        anyhow::bail!("[OpenAIAuth0] Error login")
     }
 
     #[async_recursion]
@@ -332,8 +370,8 @@ impl OpenAIAuth0 {
         code_verifier: &str,
         location: &str,
     ) -> anyhow::Result<String> {
-        let url = format!("https://auth0.openai.com{}", location);
-        let state = Self::get_callback_state(&Url::parse(&url)?)?;
+        let url = format!("{}{}", OPENAI_OAUTH_URL, location);
+        let state = Self::get_callback_state(&Url::parse(&url)?);
         let data = json!({
             "state": state,
             "code": self.mfa.clone().context("[OpenAIAuth0] MFA required.")?,
@@ -342,10 +380,7 @@ impl OpenAIAuth0 {
 
         let mut headers = self.req_headers.clone();
         headers.insert("Referer", HeaderValue::from_str(&url)?);
-        headers.insert(
-            "Origin",
-            HeaderValue::from_static("https://auth0.openai.com"),
-        );
+        headers.insert("Origin", HeaderValue::from_static(OPENAI_OAUTH_URL));
         headers.insert("User-Agent", HeaderValue::from_static(UA));
 
         let resp = self
@@ -386,7 +421,7 @@ impl OpenAIAuth0 {
         let code = Self::get_callback_code(&url)?;
 
         let data = json!({
-            "redirect_uri": "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback".to_string(),
+            "redirect_uri": OPENAI_IOS_CALLBACK.to_string(),
             "grant_type": "authorization_code".to_string(),
             "client_id": CLIENT_ID.to_string(),
             "code": code,
@@ -395,7 +430,7 @@ impl OpenAIAuth0 {
 
         let resp = self
             .session
-            .post("https://auth0.openai.com/oauth/token")
+            .post(OPENAI_OAUTH_TOKEN_URL)
             .headers(self.req_headers.clone())
             .json(&data)
             .send()
@@ -403,7 +438,7 @@ impl OpenAIAuth0 {
 
         if resp.status().is_success() {
             let result = resp
-                .json::<AccessToken>()
+                .json::<AccessTokenResult>()
                 .await
                 .context("[OpenAIAuth0] Get access token failed, maybe you need a proxy")?;
             self.expires = Some(
@@ -421,13 +456,13 @@ impl OpenAIAuth0 {
         }
     }
 
-    pub async fn do_refresh_token(&mut self) -> anyhow::Result<()> {
+    pub async fn do_refresh_token(&mut self) -> OAuthResult<String> {
         let refresh_token = self
             .refresh_token
             .clone()
             .context("[OpenAIAuth0] You are not logged in")?;
         let data = json!({
-            "redirect_uri": "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback".to_string(),
+            "redirect_uri": OPENAI_IOS_CALLBACK.to_string(),
             "grant_type": "refresh_token".to_string(),
             "client_id": CLIENT_ID.to_string(),
             "refresh_token": refresh_token
@@ -435,42 +470,93 @@ impl OpenAIAuth0 {
 
         let resp = self
             .session
-            .post("https://auth0.openai.com/oauth/token")
+            .post(OPENAI_OAUTH_TOKEN_URL)
             .json(&data)
             .send()
             .await?;
         if resp.status().is_success() {
-            let result = resp
-                .json::<RefreshToken>()
-                .await
-                .context("[OpenAIAuth0] Get access token failed, maybe you need a proxy")?;
+            let result = resp.json::<RefreshTokenResult>()
+                .await.context("[OpenAIAuth0] Get access token failed, maybe you need a proxy")?;
             self.expires = Some(
                 chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
                     - chrono::Duration::minutes(5),
             );
 
+            let token = result.access_token.clone();
             self.access_token = Some(result.access_token);
             self.id_token = Some(result.id_token);
+            Ok(token)
         } else {
-            anyhow::bail!("[OpenAIAuth0] Get refresh access token failed")
+            let result = resp.json::<crate::openai::oauth::OAuthError>().await?;
+            // let error = OAuthError::OAuthBadRequest {
+            //                 error: result.error,
+            //                 error_description: result.error_description
+            //            };
+            Err(anyhow::Error::from(result))
         }
-        Ok(())
+    }
+
+    pub async fn do_revoke_token(&mut self) -> anyhow::Result<()> {
+        let access_token = self
+            .access_token
+            .clone()
+            .context("[OpenAIAuth0] You are not logged in")?;
+        let data = json!({
+            "client_id": CLIENT_ID.to_string(),
+            "token": access_token
+        });
+        todo!()
     }
 }
 
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-struct AccessToken {
+#[derive(Debug, Deserialize)]
+pub struct OAuthBadRequestResult {
+    error: String,
+    error_description: String,
+}
+
+#[derive(thiserror::Error, Debug, Deserialize)]
+pub enum OAuthError {
+    #[error("invalid request (error {error:?}, error_description {error_description:?})")]
+    OAuthBadRequest {
+        error: String,
+        error_description: String,
+    },
+    #[error("Error login")]
+    ErrorLogin,
+    #[error("You are not logged in")]
+    NotLogin
+}
+
+#[derive(Debug, Deserialize)]
+struct AccessTokenResult {
     access_token: String,
     refresh_token: String,
     id_token: String,
     expires_in: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RefreshToken {
+#[derive(Debug, Deserialize)]
+struct RefreshTokenResult {
     access_token: String,
     id_token: String,
     expires_in: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OpenAIUserInfo {
+    nickname: String,
+    name: String,
+    picture: String,
+    updated_at: String,
+    email: String,
+    email_verified: bool,
+    iss: String,
+    aud: String,
+    iat: i64,
+    exp: i64,
+    sub: String,
+    auth_time: i64,
 }
