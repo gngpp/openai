@@ -21,6 +21,8 @@ pub enum OAuthError {
     FailedLoginIn,
     #[error("Failed get code from callback url")]
     FailedCallbackCode,
+    #[error("Failed callback url")]
+    FailedCallbackURL,
     #[error("Invalid request login url")]
     InvalidLoginUrl,
     #[error("Invalid email or password")]
@@ -30,7 +32,7 @@ pub enum OAuthError {
     #[error("Invalid Location")]
     InvalidLocation,
     #[error("Invalid token")]
-    InvalidToken,
+    InvalidAccessToken,
     #[error("Token expired")]
     TokenExipired,
     #[error("Invalid MFA code")]

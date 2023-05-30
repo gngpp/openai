@@ -1,6 +1,5 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // let _opt = Opt::parse();
     let mut auth = openai::oauth::OpenAIOAuthBuilder::builder()
         .email("opengpt@gmail.com".to_string())
         .password("gngpp".to_string())
