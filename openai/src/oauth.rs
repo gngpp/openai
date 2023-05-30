@@ -335,8 +335,6 @@ impl OpenAIOAuth {
         );
         let resp = self.session.get(&url).headers(headers).send().await?;
 
-
-
         if resp.status().is_redirection() {
             let location = resp
                 .headers()
@@ -471,9 +469,7 @@ impl OpenAIOAuth {
             self.id_token = Some(result.id_token);
             return Ok(token);
         }
-        anyhow::bail!(Error::from(
-            resp.json::<OAuthError>().await?
-        ))
+        anyhow::bail!(Error::from(resp.json::<OAuthError>().await?))
     }
 
     pub async fn do_revoke_token(&mut self) -> OAuthResult<()> {
