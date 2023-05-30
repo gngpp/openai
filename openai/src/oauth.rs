@@ -9,12 +9,15 @@ use async_recursion::async_recursion;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
+use serde::Deserialize;
 use serde_json::json;
 
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
 use reqwest::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
+
+use crate::{OAuthError, OAuthResult};
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
@@ -23,8 +26,6 @@ const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth0.openai.com/oauth/token";
 const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
-
-pub type OAuthResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 pub struct OpenAIOAuthBuilder {
     client_builder: reqwest::ClientBuilder,
@@ -78,7 +79,7 @@ impl OpenAIOAuthBuilder {
 
     pub fn builder() -> OpenAIOAuthBuilder {
         let mut req_headers = HeaderMap::new();
-        req_headers.insert("User-Agent", HeaderValue::from_static(UA));
+        req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let mut client_builder = Client::builder();
         client_builder = client_builder.redirect(Policy::custom(|attempt| {
@@ -185,13 +186,13 @@ impl OpenAIOAuth {
             let split_jwt_strings: Vec<_> = id_token.split('.').collect();
             let jwt_body = split_jwt_strings
                 .get(1)
-                .ok_or(Error::from(OAuthError::InvalidJwt))?;
+                .ok_or(Error::from(OAuthError::InvalidToken))?;
             let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
             let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
             let user_info = serde_json::from_str::<OpenAIUserInfo>(&converted_jwt_body)?;
             return Ok(user_info);
         }
-        anyhow::bail!(Error::from(OAuthError::NotLogin))
+        anyhow::bail!(Error::from(OAuthError::FailedLoginIn))
     }
 
     pub async fn authenticate(&mut self) -> OAuthResult<String> {
@@ -203,7 +204,7 @@ impl OpenAIOAuth {
             return Ok(self
                 .access_token
                 .clone()
-                .ok_or(Error::from(OAuthError::NotLogin))?);
+                .ok_or(Error::from(OAuthError::FailedLoginIn))?);
         }
 
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
@@ -396,7 +397,7 @@ impl OpenAIOAuth {
             return self.login_handler1(code_verifier, location, &url).await;
         }
         if status.is_client_error() {
-            anyhow::bail!(Error::from(OAuthError::WrongMFACode))
+            anyhow::bail!(Error::from(OAuthError::InvalidMFACode))
         }
         anyhow::bail!(Error::from(OAuthError::FailedLogin))
     }
@@ -443,7 +444,10 @@ impl OpenAIOAuth {
     }
 
     pub async fn do_refresh_token(&mut self) -> OAuthResult<String> {
-        let refresh_token = self.refresh_token.clone().ok_or(OAuthError::NotLogin)?;
+        let refresh_token = self
+            .refresh_token
+            .clone()
+            .ok_or(OAuthError::FailedLoginIn)?;
         let data = json!({
             "redirect_uri": OPENAI_OAUTH_CALLBACK_URL.to_string(),
             "grant_type": "refresh_token".to_string(),
@@ -473,7 +477,10 @@ impl OpenAIOAuth {
     }
 
     pub async fn do_revoke_token(&mut self) -> OAuthResult<()> {
-        let refresh_token = self.refresh_token.clone().ok_or(OAuthError::NotLogin)?;
+        let refresh_token = self
+            .refresh_token
+            .clone()
+            .ok_or(OAuthError::FailedLoginIn)?;
         let data = json!({
             "client_id": CLIENT_ID.to_string(),
             "token": refresh_token
@@ -489,41 +496,6 @@ impl OpenAIOAuth {
         }
         Ok(())
     }
-}
-
-use serde::Deserialize;
-
-#[derive(thiserror::Error, Debug, Deserialize)]
-pub enum OAuthError {
-    #[error("invalid request (error {error:?}, error_description {error_description:?})")]
-    BadRequest {
-        error: String,
-        error_description: String,
-    },
-    #[error("Failed Login")]
-    FailedLogin,
-    #[error("You are not logged in")]
-    NotLogin,
-    #[error("Failed get code from callback url")]
-    FailedCallbackCode,
-    #[error("Invalid request login url")]
-    InvalidLoginUrl,
-    #[error("Invalid email or password")]
-    InvalidEmailOrPassword,
-    #[error("Invalid email")]
-    InvalidEmail,
-    #[error("Invalid Location")]
-    InvalidLocation,
-    #[error("Invalid Jwt")]
-    InvalidJwt,
-    #[error("Token Expired")]
-    TokenExipired,
-    #[error("Wrong MFA code")]
-    WrongMFACode,
-    #[error("MFA failed")]
-    MFAFailed,
-    #[error("MFA required")]
-    MFARequired,
 }
 
 #[derive(Debug, Deserialize)]
