@@ -17,18 +17,9 @@ log = "0.4.17"
 env_logger = "0.10.0"
 chrono = "0.4.22"
 clap = { version = "4.3.0", features = ["derive", "env"] }
-reqwest = { version = "0.11.18", default-features = false, features = ["json", "gzip", "cookies", "socks", "rustls-tls"] }
-tokio = { version = "1.23.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "macros", "parking_lot", "fs"] }
-serde_json = "1.0.81"
-serde = "1.0.163"
-time = { version = "0.3", features = ["formatting", "parsing"] }
-regex = "1.8.2"
-async-recursion = "1.0.4"
-url = "2.3.1"
-sha2 = "0.10.6"
-base64 = "0.21.2"
-rand = "0.8.5"
-
+reqwest = { version = "0.11.18", default-features = false, features = ["socks"] }
+tokio = { version = "1.23.1", features = ["macros", "rt-multi-thread"] }
+openai = { path = "openai" }
 
 [profile.dev]
 opt-level = 'z'

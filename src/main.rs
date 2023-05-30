@@ -2,8 +2,6 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::{io::Write, sync::Once};
 
-pub mod openai;
-
 #[derive(Parser, Debug)]
 #[clap(author, version, about, arg_required_else_help = true)]
 struct Opt {
@@ -52,16 +50,7 @@ enum SubCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // let _opt = Opt::parse();
-    let mut auth = openai::oauth::OpenAIOAuthBuilder::builder()
-        .email("xxx".to_string())
-        .password("xxx".to_string())
-        .cache(true)
-        .client_cookie_store(true)
-        .client_timeout(std::time::Duration::from_secs(20))
-        .build();
-    let token = auth.authenticate().await?;
-    println!("Token: {}", token);
+    let _opt = Opt::parse();
     Ok(())
 }
 

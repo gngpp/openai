@@ -1,30 +1,30 @@
 extern crate regex;
 
 use std::collections::HashMap;
-use std::fmt::{Debug, Error};
+use std::fmt::Debug;
 use std::time::Duration;
 
-use anyhow::{Context, Ok, anyhow};
+use anyhow::Error;
 use async_recursion::async_recursion;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 use serde_json::json;
-use url::Url;
 
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
-use reqwest::{Client, Proxy};
+use reqwest::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
+const OPENAI_OAUTH_URL: &str = "https://auth0.openai.com";
 const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth0.openai.com/oauth/token";
 const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
-const OPENAI_OAUTH_URL: &str = "https://auth0.openai.com";
-const OPENAI_IOS_CALLBACK: &str = "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
+const OPENAI_OAUTH_CALLBACK_URL: &str =
+    "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-pub type OAuthResult<T, E = anyhow::Error> =  anyhow::Result<T, E>;
+pub type OAuthResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 pub struct OpenAIOAuthBuilder {
     client_builder: reqwest::ClientBuilder,
@@ -150,7 +150,7 @@ impl OpenAIOAuth {
         code_challenge
     }
 
-    fn get_callback_code(url: &Url) -> anyhow::Result<String> {
+    fn get_callback_code(url: &Url) -> OAuthResult<String> {
         let mut url_params = HashMap::new();
         url.query_pairs().into_owned().for_each(|(key, value)| {
             url_params
@@ -170,7 +170,7 @@ impl OpenAIOAuth {
 
         let code = url_params
             .get("code")
-            .context("Error get code from callback url")?[0]
+            .ok_or(Error::from(OAuthError::FailedCallbackCode))?[0]
             .to_string();
         Ok(code)
     }
@@ -185,57 +185,52 @@ impl OpenAIOAuth {
             let split_jwt_strings: Vec<_> = id_token.split('.').collect();
             let jwt_body = split_jwt_strings
                 .get(1)
-                .ok_or(anyhow::anyhow!("Could not find separator in jwt string."))?;
+                .ok_or(Error::from(OAuthError::InvalidJwt))?;
             let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
             let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
-            let user_info = serde_json::from_str::<OpenAIUserInfo>(
-                            &converted_jwt_body,
-                        )?;
+            let user_info = serde_json::from_str::<OpenAIUserInfo>(&converted_jwt_body)?;
             return Ok(user_info);
         }
-        anyhow::bail!("[OpenAIAuth0] You are not logged in")
+        anyhow::bail!(Error::from(OAuthError::NotLogin))
     }
 
-    pub async fn authenticate(&mut self) -> anyhow::Result<String> {
+    pub async fn authenticate(&mut self) -> OAuthResult<String> {
         if self.cache
             && self.access_token.is_some()
             && self.expires.is_some()
-            && self
-                .expires
-                .context("[OpenAIAuth0] Expires properties not exist")?
-                > chrono::Utc::now()
+            && self.expires.ok_or(Error::from(OAuthError::TokenExipired))? > chrono::Utc::now()
         {
             return Ok(self
                 .access_token
                 .clone()
-                .context("[OpenAIAuth0] You are not logged in")?);
+                .ok_or(Error::from(OAuthError::NotLogin))?);
         }
 
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
-            anyhow::bail!("[OpenAIAuth0] Invalid email or password")
+            anyhow::bail!(Error::from(OAuthError::InvalidEmailOrPassword))
         }
 
         self.login().await
     }
 
-    async fn login(&mut self) -> anyhow::Result<String> {
+    async fn login(&mut self) -> OAuthResult<String> {
         let code_verifier = Self::generate_code_verifier();
         let code_challenge = Self::generate_code_challenge(&code_verifier);
-
-        log::debug!("code_verifier: {}", code_verifier);
-        log::debug!("code_challenge: {}", code_challenge);
 
         let url = format!("https://auth0.openai.com/authorize?client_id={}&audience=https%3A%2F%2Fapi.openai.com%2Fv1&redirect_uri=com.openai.chat%3A%2F%2Fauth0.openai.com%2Fios%2Fcom.openai.chat%2Fcallback&scope=openid%20email%20profile%20offline_access%20model.request%20model.read%20organization.read%20offline&response_type=code&code_challenge={}&code_challenge_method=S256&prompt=login", CLIENT_ID, code_challenge);
 
         let mut headers = self.req_headers.clone();
-        headers.insert("Referer", HeaderValue::from_static(OPENAI_OAUTH_URL));
+        headers.insert(
+            reqwest::header::REFERER,
+            HeaderValue::from_static(OPENAI_OAUTH_URL),
+        );
         let resp = self.session.get(url).headers(headers).send().await?;
 
         if resp.status().is_success() {
             let state = Self::get_callback_state(resp.url());
             self.identifier_handler(&code_verifier, &state).await
         } else {
-            anyhow::bail!("[OpenAIAuth0] Error request login url")
+            anyhow::bail!(Error::from(OAuthError::InvalidLoginUrl))
         }
     }
 
@@ -249,8 +244,11 @@ impl OpenAIOAuth {
             state
         );
         let mut headers = self.req_headers.clone();
-        headers.insert("Referer", HeaderValue::from_str(&url)?);
-        headers.insert("Origin", HeaderValue::from_static(OPENAI_OAUTH_URL));
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
+        headers.insert(
+            reqwest::header::ORIGIN,
+            HeaderValue::from_static(OPENAI_OAUTH_URL),
+        );
         let data = json!({
             "state": state,
             "username": self.email.to_string(),
@@ -269,19 +267,15 @@ impl OpenAIOAuth {
             .await?;
 
         if resp.status().is_redirection() {
-            log::debug!(
-                "[OpenAIAuth0] Redirection request headers{:?}",
-                resp.headers()
-            );
             let location = resp
                 .headers()
                 .get("Location")
-                .context("[OpenAIAuth0] Error check email")?
+                .ok_or(Error::from(OAuthError::InvalidLocation))?
                 .to_str()?;
             self.login_handler0(code_verifier, state, location, &url)
                 .await
         } else {
-            anyhow::bail!("[OpenAIAuth0] Error check email")
+            anyhow::bail!(Error::from(OAuthError::InvalidEmail))
         }
     }
 
@@ -291,11 +285,10 @@ impl OpenAIOAuth {
         state: &str,
         location: &str,
         referrer: &str,
-    ) -> anyhow::Result<String> {
+    ) -> OAuthResult<String> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
-        self.req_headers
-            .insert("Referer", HeaderValue::from_str(referrer)?);
-        self.req_headers.remove("Origin");
+        let mut headers = self.req_headers.clone();
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(referrer)?);
         let data = json!({
             "state": state,
             "username": self.email.to_string(),
@@ -305,7 +298,7 @@ impl OpenAIOAuth {
         let resp = self
             .session
             .post(&url)
-            .headers(self.req_headers.clone())
+            .headers(headers)
             .json(&data)
             .send()
             .await?;
@@ -314,16 +307,16 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .context("[OpenAIAuth0] Error login")?
+                .ok_or(Error::from(OAuthError::InvalidLocation))?
                 .to_str()?;
             if !location.starts_with("/authorize/resume?") {
-                anyhow::bail!("[OpenAIAuth0] Login failed")
+                anyhow::bail!(Error::from(OAuthError::FailedLogin))
             }
             self.login_handler1(code_verifier, location, &url).await
         } else if resp.status().is_client_error() {
-            anyhow::bail!("[OpenAIAuth0] Wrong email or password")
+            anyhow::bail!(Error::from(OAuthError::InvalidEmailOrPassword))
         } else {
-            anyhow::bail!("[OpenAIAuth0] Error login")
+            anyhow::bail!(Error::from(OAuthError::FailedLogin))
         }
     }
 
@@ -333,55 +326,54 @@ impl OpenAIOAuth {
         code_verifier: &str,
         location: &str,
         referrer: &str,
-    ) -> anyhow::Result<String> {
+    ) -> OAuthResult<String> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
-        headers.insert("Referer", HeaderValue::from_str(referrer).unwrap());
+        headers.insert(
+            reqwest::header::REFERER,
+            HeaderValue::from_str(referrer).unwrap(),
+        );
         let resp = self.session.get(&url).headers(headers).send().await?;
 
-        log::debug!(
-            "[OpenAIAuth0]-login_handler1 Request headers: {:?}",
-            resp.headers()
-        );
+
 
         if resp.status().is_redirection() {
             let location = resp
                 .headers()
                 .get("Location")
-                .context("[OpenAIAuth0] Error login")?
+                .ok_or(Error::from(OAuthError::InvalidLocation))?
                 .to_str()?;
             if location.starts_with("/u/mfa-otp-challenge?") {
                 if self.mfa.is_none() {
-                    anyhow::bail!("[OpenAIAuth0] MFA required.")
+                    anyhow::bail!(Error::from(OAuthError::MFARequired))
                 }
                 return self.login_handler2(code_verifier, location).await;
-            } else if !location.starts_with(OPENAI_IOS_CALLBACK) {
+            } else if !location.starts_with(OPENAI_OAUTH_CALLBACK_URL) {
                 anyhow::bail!("[OpenAIAuth0] Login callback failed.")
             } else {
                 return self.do_get_access_token(code_verifier, location).await;
             }
         }
-        anyhow::bail!("[OpenAIAuth0] Error login")
+        anyhow::bail!(Error::from(OAuthError::FailedLogin))
     }
 
     #[async_recursion]
-    async fn login_handler2(
-        &mut self,
-        code_verifier: &str,
-        location: &str,
-    ) -> anyhow::Result<String> {
+    async fn login_handler2(&mut self, code_verifier: &str, location: &str) -> OAuthResult<String> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let state = Self::get_callback_state(&Url::parse(&url)?);
         let data = json!({
             "state": state,
-            "code": self.mfa.clone().context("[OpenAIAuth0] MFA required.")?,
+            "code": self.mfa.clone().ok_or(Error::from(OAuthError::MFARequired))?,
             "action": "default"
         });
 
         let mut headers = self.req_headers.clone();
-        headers.insert("Referer", HeaderValue::from_str(&url)?);
-        headers.insert("Origin", HeaderValue::from_static(OPENAI_OAUTH_URL));
-        headers.insert("User-Agent", HeaderValue::from_static(UA));
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
+        headers.insert(
+            reqwest::header::ORIGIN,
+            HeaderValue::from_static(OPENAI_OAUTH_URL),
+        );
+        headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let resp = self
             .session
@@ -395,33 +387,33 @@ impl OpenAIOAuth {
             let location = resp
                 .headers()
                 .get("Location")
-                .context("[OpenAIAuth0] Error login.")?
+                .ok_or(Error::from(OAuthError::InvalidLocation))?
                 .to_str()?;
 
             if location.starts_with("/authorize/resume?") {
                 if self.mfa.is_none() {
-                    anyhow::bail!("[OpenAIAuth0] MFA failed.")
+                    anyhow::bail!(Error::from(OAuthError::MFAFailed))
                 }
             }
             return self.login_handler1(code_verifier, location, &url).await;
         }
         if status.is_client_error() {
-            anyhow::bail!("[OpenAIAuth0] Wrong MFA code")
+            anyhow::bail!(Error::from(OAuthError::WrongMFACode))
         }
-        anyhow::bail!("[OpenAIAuth0] Error login")
+        anyhow::bail!(Error::from(OAuthError::FailedLogin))
     }
 
     async fn do_get_access_token(
         &mut self,
         code_verifier: &str,
         callback_url: &str,
-    ) -> anyhow::Result<String> {
+    ) -> OAuthResult<String> {
         let url = Url::parse(callback_url)?;
 
         let code = Self::get_callback_code(&url)?;
 
         let data = json!({
-            "redirect_uri": OPENAI_IOS_CALLBACK.to_string(),
+            "redirect_uri": OPENAI_OAUTH_CALLBACK_URL.to_string(),
             "grant_type": "authorization_code".to_string(),
             "client_id": CLIENT_ID.to_string(),
             "code": code,
@@ -437,10 +429,7 @@ impl OpenAIOAuth {
             .await?;
 
         if resp.status().is_success() {
-            let result = resp
-                .json::<AccessTokenResult>()
-                .await
-                .context("[OpenAIAuth0] Get access token failed, maybe you need a proxy")?;
+            let result = resp.json::<AccessTokenResult>().await?;
             self.expires = Some(
                 chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
                     - chrono::Duration::minutes(5),
@@ -450,19 +439,15 @@ impl OpenAIOAuth {
             self.access_token = Some(result.access_token);
             self.refresh_token = Some(result.refresh_token);
             self.id_token = Some(result.id_token);
-            Ok(access_token)
-        } else {
-            anyhow::bail!("[OpenAIAuth0] Get access token failed")
+            return Ok(access_token);
         }
+        anyhow::bail!(Error::from(OAuthError::FailedLogin))
     }
 
     pub async fn do_refresh_token(&mut self) -> OAuthResult<String> {
-        let refresh_token = self
-            .refresh_token
-            .clone()
-            .context("[OpenAIAuth0] You are not logged in")?;
+        let refresh_token = self.refresh_token.clone().ok_or(OAuthError::NotLogin)?;
         let data = json!({
-            "redirect_uri": OPENAI_IOS_CALLBACK.to_string(),
+            "redirect_uri": OPENAI_OAUTH_CALLBACK_URL.to_string(),
             "grant_type": "refresh_token".to_string(),
             "client_id": CLIENT_ID.to_string(),
             "refresh_token": refresh_token
@@ -475,8 +460,7 @@ impl OpenAIOAuth {
             .send()
             .await?;
         if resp.status().is_success() {
-            let result = resp.json::<RefreshTokenResult>()
-                .await.context("[OpenAIAuth0] Get access token failed, maybe you need a proxy")?;
+            let result = resp.json::<RefreshTokenResult>().await?;
             self.expires = Some(
                 chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
                     - chrono::Duration::minutes(5),
@@ -485,49 +469,65 @@ impl OpenAIOAuth {
             let token = result.access_token.clone();
             self.access_token = Some(result.access_token);
             self.id_token = Some(result.id_token);
-            Ok(token)
-        } else {
-            let result = resp.json::<crate::openai::oauth::OAuthError>().await?;
-            // let error = OAuthError::OAuthBadRequest {
-            //                 error: result.error,
-            //                 error_description: result.error_description
-            //            };
-            Err(anyhow::Error::from(result))
+            return Ok(token);
         }
+        anyhow::bail!(Error::from(
+            resp.json::<OAuthError>().await?
+        ))
     }
 
-    pub async fn do_revoke_token(&mut self) -> anyhow::Result<()> {
-        let access_token = self
-            .access_token
-            .clone()
-            .context("[OpenAIAuth0] You are not logged in")?;
+    pub async fn do_revoke_token(&mut self) -> OAuthResult<()> {
+        let refresh_token = self.refresh_token.clone().ok_or(OAuthError::NotLogin)?;
         let data = json!({
             "client_id": CLIENT_ID.to_string(),
-            "token": access_token
+            "token": refresh_token
         });
-        todo!()
+        let resp = self
+            .session
+            .post(OPENAI_OAUTH_REVOKE_URL)
+            .json(&data)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            anyhow::bail!(Error::from(resp.json::<OAuthError>().await?))
+        }
+        Ok(())
     }
 }
 
-use serde::{Serialize, Deserialize};
-
-#[derive(Debug, Deserialize)]
-pub struct OAuthBadRequestResult {
-    error: String,
-    error_description: String,
-}
+use serde::Deserialize;
 
 #[derive(thiserror::Error, Debug, Deserialize)]
 pub enum OAuthError {
     #[error("invalid request (error {error:?}, error_description {error_description:?})")]
-    OAuthBadRequest {
+    BadRequest {
         error: String,
         error_description: String,
     },
-    #[error("Error login")]
-    ErrorLogin,
+    #[error("Failed Login")]
+    FailedLogin,
     #[error("You are not logged in")]
-    NotLogin
+    NotLogin,
+    #[error("Failed get code from callback url")]
+    FailedCallbackCode,
+    #[error("Invalid request login url")]
+    InvalidLoginUrl,
+    #[error("Invalid email or password")]
+    InvalidEmailOrPassword,
+    #[error("Invalid email")]
+    InvalidEmail,
+    #[error("Invalid Location")]
+    InvalidLocation,
+    #[error("Invalid Jwt")]
+    InvalidJwt,
+    #[error("Token Expired")]
+    TokenExipired,
+    #[error("Wrong MFA code")]
+    WrongMFACode,
+    #[error("MFA failed")]
+    MFAFailed,
+    #[error("MFA required")]
+    MFARequired,
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,7 +545,8 @@ struct RefreshTokenResult {
     expires_in: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
 pub struct OpenAIUserInfo {
     nickname: String,
     name: String,
