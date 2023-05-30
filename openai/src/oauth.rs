@@ -200,10 +200,7 @@ impl OpenAIOAuth {
             && self.expires.is_some()
             && self.expires.ok_or(OAuthError::TokenExipired)? > chrono::Utc::now()
         {
-            return Ok(self
-                .access_token
-                .clone()
-                .ok_or(OAuthError::FailedLoginIn)?);
+            return Ok(self.access_token.clone().ok_or(OAuthError::FailedLoginIn)?);
         }
 
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
@@ -519,8 +516,8 @@ pub struct OpenAIUserInfo {
     name: String,
     picture: String,
     updated_at: String,
-    email: String,
     email_verified: bool,
+    email: String,
     iss: String,
     aud: String,
     iat: i64,

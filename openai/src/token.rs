@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use crate::OAuthError;
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
@@ -25,13 +25,13 @@ k6Ttg+FMNPgvH6R4e+lqhtmslXwXv9Xm95eS6JokJaYUimNX+dzhD+eRq+88vGJO63s\n\
 afkEyGvifAMJFPwO78=\n\
 -----END PUBLIC KEY-----";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct Keys {
     alg: String,
     x5c: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct KeyResult {
     keys: Vec<Keys>,
 }
