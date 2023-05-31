@@ -16,7 +16,7 @@ use rand::Rng;
 use reqwest::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
 
-use crate::{OAuthError, OAuthResult};
+use crate::{token, OAuthError, OAuthResult};
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
@@ -26,12 +26,12 @@ const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-pub struct OpenAIOAuthBuilder {
+pub struct OpenOAuth0Builder {
     client_builder: reqwest::ClientBuilder,
-    oauth: OpenAIOAuth,
+    oauth: OpenOAuth0,
 }
 
-impl OpenAIOAuthBuilder {
+impl OpenOAuth0Builder {
     pub fn email(mut self, email: String) -> Self {
         self.oauth.email = email;
         self
@@ -66,17 +66,22 @@ impl OpenAIOAuthBuilder {
         self
     }
 
-    pub fn client_cookie_store(mut self, store: bool) -> Self {
+    pub fn cookie_store(mut self, store: bool) -> Self {
         self.client_builder = self.client_builder.cookie_store(store);
         self
     }
 
-    pub fn build(mut self) -> OpenAIOAuth {
+    pub fn token_store<S: token::AccessTokenStore + 'static>(mut self, store: S) -> Self {
+        self.oauth.store = Box::new(store);
+        self
+    }
+
+    pub fn build(mut self) -> OpenOAuth0 {
         self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
         self.oauth
     }
 
-    pub fn builder() -> OpenAIOAuthBuilder {
+    pub fn builder() -> OpenOAuth0Builder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
@@ -94,9 +99,9 @@ impl OpenAIOAuthBuilder {
             }
         }));
 
-        OpenAIOAuthBuilder {
+        OpenOAuth0Builder {
             client_builder,
-            oauth: OpenAIOAuth {
+            oauth: OpenOAuth0 {
                 email: String::new(),
                 password: String::new(),
                 session: Client::new(),
@@ -109,28 +114,29 @@ impl OpenAIOAuthBuilder {
                 expires: None,
                 email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
                     .expect("Regex::new()"),
+                store: Box::new(token::Policy::men_store()),
             },
         }
     }
 }
 
-#[derive(Debug)]
-pub struct OpenAIOAuth {
+pub struct OpenOAuth0 {
     email: String,
     session: Client,
     password: String,
     mfa: Option<String>,
     cache: bool,
     req_headers: HeaderMap,
+    store: Box<dyn token::AccessTokenStore>,
     access_token: Option<String>,
     refresh_token: Option<String>,
     id_token: Option<String>,
-    expires: Option<chrono::DateTime<chrono::Utc>>,
+    expires: Option<i64>,
     email_regex: Regex,
 }
 
 // api: https://auth0.openai.com
-impl OpenAIOAuth {
+impl OpenOAuth0 {
     fn generate_code_verifier() -> String {
         let token: [u8; 32] = rand::thread_rng().gen();
         let code_verifier = general_purpose::URL_SAFE
@@ -180,7 +186,7 @@ impl OpenAIOAuth {
         url_params["state"].to_owned()
     }
 
-    pub fn get_user_info(&self) -> OAuthResult<OpenAIUserInfo> {
+    pub fn get_user_info(&self) -> OAuthResult<Profile> {
         if let Some(id_token) = self.id_token.clone() {
             let split_jwt_strings: Vec<_> = id_token.split('.').collect();
             let jwt_body = split_jwt_strings
@@ -188,7 +194,7 @@ impl OpenAIOAuth {
                 .ok_or(OAuthError::InvalidAccessToken)?;
             let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
             let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
-            let user_info = serde_json::from_str::<OpenAIUserInfo>(&converted_jwt_body)?;
+            let user_info = serde_json::from_str::<Profile>(&converted_jwt_body)?;
             return Ok(user_info);
         }
         anyhow::bail!(OAuthError::FailedLoginIn)
@@ -198,7 +204,7 @@ impl OpenAIOAuth {
         if self.cache
             && self.access_token.is_some()
             && self.expires.is_some()
-            && self.expires.ok_or(OAuthError::TokenExipired)? > chrono::Utc::now()
+            && self.expires.ok_or(OAuthError::TokenExpired)? > chrono::Utc::now().timestamp()
         {
             return Ok(self.access_token.clone().ok_or(OAuthError::FailedLoginIn)?);
         }
@@ -206,7 +212,6 @@ impl OpenAIOAuth {
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
             anyhow::bail!(OAuthError::InvalidEmailOrPassword)
         }
-
         self.login().await
     }
 
@@ -424,10 +429,11 @@ impl OpenAIOAuth {
             .await?;
 
         if resp.status().is_success() {
-            let result = resp.json::<AccessTokenResult>().await?;
+            let result = resp.json::<AccessToken>().await?;
             self.expires = Some(
-                chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
-                    - chrono::Duration::minutes(5),
+                (chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
+                    - chrono::Duration::minutes(5))
+                .timestamp(),
             );
 
             let access_token = result.access_token.clone();
@@ -458,10 +464,11 @@ impl OpenAIOAuth {
             .send()
             .await?;
         if resp.status().is_success() {
-            let result = resp.json::<RefreshTokenResult>().await?;
+            let result = resp.json::<RefreshToken>().await?;
             self.expires = Some(
-                chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
-                    - chrono::Duration::minutes(5),
+                (chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
+                    - chrono::Duration::minutes(5))
+                .timestamp(),
             );
 
             let token = result.access_token.clone();
@@ -495,7 +502,7 @@ impl OpenAIOAuth {
 }
 
 #[derive(Debug, Deserialize)]
-struct AccessTokenResult {
+pub struct AccessToken {
     access_token: String,
     refresh_token: String,
     id_token: String,
@@ -503,7 +510,7 @@ struct AccessTokenResult {
 }
 
 #[derive(Debug, Deserialize)]
-struct RefreshTokenResult {
+pub struct RefreshToken {
     access_token: String,
     id_token: String,
     expires_in: u32,
@@ -511,7 +518,7 @@ struct RefreshTokenResult {
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
-pub struct OpenAIUserInfo {
+pub struct Profile {
     nickname: String,
     name: String,
     picture: String,

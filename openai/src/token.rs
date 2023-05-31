@@ -1,11 +1,11 @@
 use std::str::FromStr;
 
-use crate::OAuthError;
+use crate::{OAuthError, TokenResult};
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
+use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
 
-const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
 pub const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\n\
 MIIC+zCCAeOgAwIBAgIJLlfMWYK8snRdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNVBAM\n\
 TEG9wZW5haS5hdXRoMC5jb20wHhcNMjAwMjExMDUyMjI5WhcNMzMxMDIwMDUyMjI5Wj\n\
@@ -24,6 +24,8 @@ Tmj+uSHWfkq93oG5tsOk2nTN4UCpyT5fWGv4eh7q2cKElMQM5GT/uZnCjEdDmJU2M11\n\
 k6Ttg+FMNPgvH6R4e+lqhtmslXwXv9Xm95eS6JokJaYUimNX+dzhD+eRq+88vGJO63s\n\
 afkEyGvifAMJFPwO78=\n\
 -----END PUBLIC KEY-----";
+const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
+const UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 
 #[derive(Deserialize)]
 struct Keys {
@@ -36,12 +38,14 @@ struct KeyResult {
     keys: Vec<Keys>,
 }
 
-async fn keys() -> anyhow::Result<KeyResult> {
+async fn keys() -> TokenResult<KeyResult> {
     use reqwest::Client;
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()?;
-    let resp = client.get(OAUTH_PUBLIC_KEY_URL).send().await?;
+    let resp = client.get(OAUTH_PUBLIC_KEY_URL)
+    .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
+    .send().await?;
     if resp.status().is_success() {
         let keys = resp.json::<KeyResult>().await?;
         return Ok(keys);
@@ -49,7 +53,7 @@ async fn keys() -> anyhow::Result<KeyResult> {
     anyhow::bail!(OAuthError::FailedPubKeyRequest)
 }
 
-fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> anyhow::Result<()> {
+fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
     let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
     let verifier = Verifier::create().build()?;
     let claims: Value = verifier.verify(&token, &alg)?;
@@ -65,7 +69,7 @@ fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> anyhow::Result<()> {
     anyhow::bail!(OAuthError::InvalidAccessToken)
 }
 
-pub async fn verify_access_token(token: &str) -> anyhow::Result<()> {
+pub async fn verify_access_token(token: &str) -> TokenResult<()> {
     if token.starts_with("sk-") {
         return Ok(());
     }
@@ -85,5 +89,147 @@ pub async fn verify_access_token(token: &str) -> anyhow::Result<()> {
             let alg = AlgorithmID::from_str(key.alg.as_str())?;
             verify(token, pub_key.as_bytes(), alg)
         }
+    }
+}
+
+use std::{collections::HashMap, sync::RwLock};
+
+use async_trait::async_trait;
+use serde::Serialize;
+
+#[async_trait]
+pub trait AccessTokenStore: Send + Sync {
+    // Store AccessToken return an old Token
+    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>>;
+
+    // Read AccessToken return a copy of the Token
+    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>>;
+
+    // Delete AccessToken return an current Token
+    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>>;
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Token {
+    email: String,
+    access_token: String,
+    refresh_token: String,
+    id_token: String,
+    expired_in: u32,
+}
+
+static mut MEM_STORAGE: std::mem::MaybeUninit<MemStore> = std::mem::MaybeUninit::uninit();
+static mut FILE_STORAGE: std::mem::MaybeUninit<FileStore> = std::mem::MaybeUninit::uninit();
+static ONCE: std::sync::Once = std::sync::Once::new();
+
+#[derive(thiserror::Error, Debug)]
+pub enum TokenStoreError {
+    #[error("[TokenStoreError] AccessError")]
+    AccessError,
+    #[error("[TokenStoreError] NotFoundError")]
+    NotFoundError,
+}
+
+#[derive(Debug)]
+pub struct MemStore(RwLock<HashMap<String, Token>>);
+
+#[async_trait]
+impl AccessTokenStore for MemStore {
+    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>> {
+        Ok(self
+            .0
+            .write()
+            .map_err(|_| TokenStoreError::AccessError)?
+            .insert(token.email.to_string(), token))
+    }
+
+    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>> {
+        let binding = self.0.read().map_err(|_| TokenStoreError::AccessError)?;
+        Ok(binding.get(email).cloned())
+    }
+
+    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>> {
+        Ok(self
+            .0
+            .write()
+            .map_err(|_| TokenStoreError::AccessError)?
+            .remove(email))
+    }
+}
+
+pub struct FileStore(std::sync::RwLock<HashMap<String, Token>>);
+
+#[async_trait]
+impl AccessTokenStore for FileStore {
+    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>> {
+        todo!()
+    }
+
+    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>> {
+        todo!()
+    }
+
+    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>> {
+        todo!()
+    }
+}
+
+/// The `Policy` struct.
+/// Implementation of a universal singleton storage policy
+/// # Example
+///
+/// ```rust
+/// let _ = Policy::mem_store();
+/// ```
+pub struct Policy;
+
+impl Policy {
+    
+    /// # Examples
+    ///
+    /// ```
+    /// let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    ///    .email("opengpt@gmail.com".to_string())
+    ///    .password("gngpp".to_string())
+    ///    .cache(true)
+    ///    .cookie_store(true)
+    ///    .token_store(openai::token::Policy::men_store())
+    ///    .client_timeout(std::time::Duration::from_secs(20))
+    ///    .build();
+    /// let token = auth.authenticate().await?;
+    /// println!("Token: {}", token);
+    /// println!("Profile: {:#?}", auth.get_user_info()?);
+    /// ```
+    pub fn men_store() -> impl AccessTokenStore {
+        ONCE.call_once(|| unsafe {
+            MEM_STORAGE
+                .as_mut_ptr()
+                .write(MemStore(RwLock::new(HashMap::new())))
+        });
+        unsafe { MEM_STORAGE.as_mut_ptr().read() }
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    ///    .email("opengpt@gmail.com".to_string())
+    ///    .password("gngpp".to_string())
+    ///    .cache(true)
+    ///    .cookie_store(true)
+    ///    .token_store(openai::token::Policy::file_store())
+    ///    .client_timeout(std::time::Duration::from_secs(20))
+    ///    .build();
+    /// let token = auth.authenticate().await?;
+    /// println!("Token: {}", token);
+    /// println!("Profile: {:#?}", auth.get_user_info()?);
+    /// ```
+    pub fn file_store() -> impl AccessTokenStore {
+        ONCE.call_once(|| unsafe {
+            FILE_STORAGE
+                .as_mut_ptr()
+                .write(FileStore(RwLock::new(HashMap::new())))
+        });
+        unsafe { FILE_STORAGE.as_mut_ptr().read() }
     }
 }

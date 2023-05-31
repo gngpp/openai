@@ -19,6 +19,7 @@ sha2 = "0.10.6"
 base64 = "0.21.2"
 rand = "0.8.5"
 jsonwebtokens = "1"
+async-trait = "0.1.68"
 
 [lib]
 name = "openai"

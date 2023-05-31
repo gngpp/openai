@@ -5,6 +5,7 @@ pub mod token;
 use serde::Deserialize;
 
 pub type OAuthResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
+pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 #[derive(thiserror::Error, Deserialize, Debug)]
 pub enum OAuthError {
@@ -34,7 +35,7 @@ pub enum OAuthError {
     #[error("Invalid token")]
     InvalidAccessToken,
     #[error("Token expired")]
-    TokenExipired,
+    TokenExpired,
     #[error("Invalid MFA code")]
     InvalidMFACode,
     #[error("MFA failed")]
