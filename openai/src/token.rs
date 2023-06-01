@@ -1,6 +1,8 @@
-use std::str::FromStr;
+use std::{ops::Not, path::PathBuf, str::FromStr};
 
-use crate::{OAuthError, TokenResult};
+use crate::{OAuthError, TokenResult, TokenStoreError};
+use anyhow::Context;
+use base64::{engine::general_purpose, Engine};
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
 use reqwest::header;
 use serde::Deserialize;
@@ -43,9 +45,11 @@ async fn keys() -> TokenResult<KeyResult> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()?;
-    let resp = client.get(OAUTH_PUBLIC_KEY_URL)
-    .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
-    .send().await?;
+    let resp = client
+        .get(OAUTH_PUBLIC_KEY_URL)
+        .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
+        .send()
+        .await?;
     if resp.status().is_success() {
         let keys = resp.json::<KeyResult>().await?;
         return Ok(keys);
@@ -98,57 +102,167 @@ use async_trait::async_trait;
 use serde::Serialize;
 
 #[async_trait]
-pub trait AccessTokenStore: Send + Sync {
-    // Store AccessToken return an old Token
-    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>>;
+pub trait AuthenticateTokenStore: Send + Sync {
+    // Store Authenticate Token return an old Token
+    async fn set_token(
+        &mut self,
+        token: AuthenticateToken,
+    ) -> TokenResult<Option<AuthenticateToken>>;
 
-    // Read AccessToken return a copy of the Token
-    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>>;
+    // Read Authenticate Token return a copy of the Token
+    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>>;
 
-    // Delete AccessToken return an current Token
-    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>>;
+    // Delete Authenticate Token return an current Token
+    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>>;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Token {
-    email: String,
+pub struct AuthenticateToken {
     access_token: String,
     refresh_token: String,
-    id_token: String,
-    expired_in: u32,
+    expires: i64,
+    profile: Profile,
 }
 
-static mut MEM_STORAGE: std::mem::MaybeUninit<MemStore> = std::mem::MaybeUninit::uninit();
-static mut FILE_STORAGE: std::mem::MaybeUninit<FileStore> = std::mem::MaybeUninit::uninit();
+impl AuthenticateToken {
+    pub fn email(&self) -> String {
+        self.profile.email.clone()
+    }
+
+    pub fn access_token(&self) -> &str {
+        self.access_token.as_str()
+    }
+
+    pub fn refresh_token(&self) -> &str {
+        self.refresh_token.as_str()
+    }
+
+    pub fn is_expired(&self) -> bool {
+        chrono::Utc::now().timestamp() > self.expires
+    }
+
+    pub fn profile(&self) -> Profile {
+        self.profile.clone()
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Profile {
+    pub nickname: String,
+    pub name: String,
+    pub picture: String,
+    pub updated_at: String,
+    pub email_verified: bool,
+    pub email: String,
+    pub iss: String,
+    pub aud: String,
+    pub iat: i64,
+    pub exp: i64,
+    pub sub: String,
+    pub auth_time: i64,
+}
+
+impl TryFrom<String> for Profile {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let split_jwt_strings: Vec<_> = value.split('.').collect();
+        let jwt_body = split_jwt_strings
+            .get(1)
+            .ok_or(OAuthError::InvalidAccessToken)?;
+        let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
+        let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
+        let profile = serde_json::from_str::<Profile>(&converted_jwt_body)?;
+        Ok(profile)
+    }
+}
+
+impl TryFrom<crate::oauth::AccessToken> for AuthenticateToken {
+    type Error = anyhow::Error;
+
+    fn try_from(value: crate::oauth::AccessToken) -> Result<Self, Self::Error> {
+        let profile = Profile::try_from(value.id_token)?;
+        let expires = (chrono::Utc::now() + chrono::Duration::seconds(i64::from(value.expires_in))
+            - chrono::Duration::minutes(5))
+        .timestamp();
+        Ok(Self {
+            access_token: value.access_token,
+            refresh_token: value.refresh_token,
+            expires,
+            profile,
+        })
+    }
+}
+
+impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
+    type Error = anyhow::Error;
+
+    fn try_from(value: crate::oauth::RefreshToken) -> Result<Self, Self::Error> {
+        let profile = Profile::try_from(value.id_token)?;
+        let expires = (chrono::Utc::now() + chrono::Duration::seconds(i64::from(value.expires_in))
+            - chrono::Duration::minutes(5))
+        .timestamp();
+        Ok(Self {
+            access_token: value.access_token,
+            refresh_token: value.refresh_token,
+            expires,
+            profile,
+        })
+    }
+}
+
 static ONCE: std::sync::Once = std::sync::Once::new();
 
-#[derive(thiserror::Error, Debug)]
-pub enum TokenStoreError {
-    #[error("[TokenStoreError] AccessError")]
-    AccessError,
-    #[error("[TokenStoreError] NotFoundError")]
-    NotFoundError,
+static mut MEM_STORAGE: std::mem::MaybeUninit<MemStore> = std::mem::MaybeUninit::uninit();
+#[derive(Debug)]
+pub struct MemStore(RwLock<HashMap<String, AuthenticateToken>>);
+
+impl MemStore {
+    /// # Examples
+    ///
+    /// ```
+    /// let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    ///    .email("opengpt@gmail.com".to_string())
+    ///    .password("gngpp".to_string())
+    ///    .cache(true)
+    ///    .cookie_store(true)
+    ///    .token_store(openai::token::MemStore::new())
+    ///    .client_timeout(std::time::Duration::from_secs(20))
+    ///    .build();
+    /// let token = auth.authenticate().await?;
+    /// println!("Token: {}", token);
+    /// println!("Profile: {:#?}", auth.get_user_info()?);
+    /// ```
+    pub fn new() -> Self {
+        ONCE.call_once(|| unsafe {
+            MEM_STORAGE
+                .as_mut_ptr()
+                .write(MemStore(RwLock::new(HashMap::new())))
+        });
+        unsafe { MEM_STORAGE.as_mut_ptr().read() }
+    }
 }
 
-#[derive(Debug)]
-pub struct MemStore(RwLock<HashMap<String, Token>>);
-
 #[async_trait]
-impl AccessTokenStore for MemStore {
-    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>> {
+impl AuthenticateTokenStore for MemStore {
+    async fn set_token(
+        &mut self,
+        token: AuthenticateToken,
+    ) -> TokenResult<Option<AuthenticateToken>> {
         Ok(self
             .0
             .write()
             .map_err(|_| TokenStoreError::AccessError)?
-            .insert(token.email.to_string(), token))
+            .insert(token.profile.email.to_string(), token))
     }
 
-    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>> {
+    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
         let binding = self.0.read().map_err(|_| TokenStoreError::AccessError)?;
         Ok(binding.get(email).cloned())
     }
 
-    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>> {
+    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
         Ok(self
             .0
             .write()
@@ -157,79 +271,78 @@ impl AccessTokenStore for MemStore {
     }
 }
 
-pub struct FileStore(std::sync::RwLock<HashMap<String, Token>>);
+static mut FILE_STORAGE: std::mem::MaybeUninit<FileStore> = std::mem::MaybeUninit::uninit();
+pub struct FileStore(PathBuf);
 
-#[async_trait]
-impl AccessTokenStore for FileStore {
-    async fn set_access_token(&mut self, token: Token) -> TokenResult<Option<Token>> {
-        todo!()
-    }
-
-    async fn get_access_token(&self, email: &String) -> TokenResult<Option<Token>> {
-        todo!()
-    }
-
-    async fn delete_access_token(&mut self, email: &String) -> TokenResult<Option<Token>> {
-        todo!()
+impl Default for FileStore {
+    fn default() -> Self {
+        let default_path = PathBuf::from(crate::DEFAULT_TOKEN_FILE);
+        if default_path.exists().not() {
+            std::fs::File::create(&default_path)
+                .expect(&TokenStoreError::CreateDefaultTokenFileError.to_string());
+        }
+        ONCE.call_once(|| unsafe { FILE_STORAGE.as_mut_ptr().write(FileStore(default_path)) });
+        unsafe { FILE_STORAGE.as_mut_ptr().read() }
     }
 }
 
-/// The `Policy` struct.
-/// Implementation of a universal singleton storage policy
-/// # Example
-///
-/// ```rust
-/// let _ = Policy::mem_store();
-/// ```
-pub struct Policy;
+impl FileStore {
+    pub async fn new(path: Option<PathBuf>) -> TokenResult<Self> {
+        let path = path.unwrap_or(Default::default());
+        if let Some(parent) = path.parent() {
+            if path.exists().not() {
+                tokio::fs::create_dir_all(parent).await?
+            }
+        }
+        if path.exists().not() {
+            tokio::fs::File::create(&path).await?;
+        }
+        ONCE.call_once(|| unsafe { FILE_STORAGE.as_mut_ptr().write(FileStore(path)) });
+        Ok(unsafe { FILE_STORAGE.as_mut_ptr().read() })
+    }
+}
 
-impl Policy {
-    
-    /// # Examples
-    ///
-    /// ```
-    /// let mut auth = openai::oauth::OpenOAuth0Builder::builder()
-    ///    .email("opengpt@gmail.com".to_string())
-    ///    .password("gngpp".to_string())
-    ///    .cache(true)
-    ///    .cookie_store(true)
-    ///    .token_store(openai::token::Policy::men_store())
-    ///    .client_timeout(std::time::Duration::from_secs(20))
-    ///    .build();
-    /// let token = auth.authenticate().await?;
-    /// println!("Token: {}", token);
-    /// println!("Profile: {:#?}", auth.get_user_info()?);
-    /// ```
-    pub fn men_store() -> impl AccessTokenStore {
-        ONCE.call_once(|| unsafe {
-            MEM_STORAGE
-                .as_mut_ptr()
-                .write(MemStore(RwLock::new(HashMap::new())))
-        });
-        unsafe { MEM_STORAGE.as_mut_ptr().read() }
+#[async_trait]
+impl AuthenticateTokenStore for FileStore {
+    async fn set_token(
+        &mut self,
+        token: AuthenticateToken,
+    ) -> TokenResult<Option<AuthenticateToken>> {
+        verify_access_token(&token.access_token)
+            .await
+            .context(TokenStoreError::AccessTokenVerifyError)?;
+        let bytes = tokio::fs::read(&self.0).await?;
+        let mut data: HashMap<String, AuthenticateToken> = if bytes.len() == 0 {
+            HashMap::new()
+        } else {
+            serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::AccessError)?
+        };
+        let v = data.insert(token.profile.email.to_string(), token);
+        let json = serde_json::to_string_pretty(&data)?;
+        tokio::fs::write(&self.0, json.as_bytes()).await?;
+        Ok(v)
     }
 
-    /// # Examples
-    ///
-    /// ```
-    /// let mut auth = openai::oauth::OpenOAuth0Builder::builder()
-    ///    .email("opengpt@gmail.com".to_string())
-    ///    .password("gngpp".to_string())
-    ///    .cache(true)
-    ///    .cookie_store(true)
-    ///    .token_store(openai::token::Policy::file_store())
-    ///    .client_timeout(std::time::Duration::from_secs(20))
-    ///    .build();
-    /// let token = auth.authenticate().await?;
-    /// println!("Token: {}", token);
-    /// println!("Profile: {:#?}", auth.get_user_info()?);
-    /// ```
-    pub fn file_store() -> impl AccessTokenStore {
-        ONCE.call_once(|| unsafe {
-            FILE_STORAGE
-                .as_mut_ptr()
-                .write(FileStore(RwLock::new(HashMap::new())))
-        });
-        unsafe { FILE_STORAGE.as_mut_ptr().read() }
+    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+        let bytes = tokio::fs::read(&self.0).await?;
+        if bytes.len() == 0 {
+            return Ok(None);
+        }
+        let data: HashMap<String, AuthenticateToken> =
+            serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::DeserializeError)?;
+        Ok(data.get(email).cloned())
+    }
+
+    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+        let bytes = tokio::fs::read(&self.0).await?;
+        if bytes.len() == 0 {
+            return Ok(None);
+        }
+        let mut data: HashMap<String, AuthenticateToken> =
+            serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::AccessError)?;
+        let v = data.remove(email);
+        let json = serde_json::to_string_pretty(&data)?;
+        tokio::fs::write(&self.0, json).await?;
+        Ok(v)
     }
 }

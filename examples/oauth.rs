@@ -1,19 +1,23 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let email = std::env::var("EMAIL")?;
+    let password = std::env::var("PASSWORD")?;
+    let store = openai::token::FileStore::default();
     let mut auth = openai::oauth::OpenOAuth0Builder::builder()
-        .email("opengpt@gmail.com".to_string())
-        .password("gngpp".to_string())
+        .email(email)
+        .password(password)
         .cache(true)
         .cookie_store(true)
-        .token_store(openai::token::Policy::file_store())
+        .token_store(store)
         .client_timeout(std::time::Duration::from_secs(20))
         .build();
-    let token = auth.authenticate().await?;
-    println!("Token: {}", token);
-    println!("Profile: {:#?}", auth.get_user_info()?);
-    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    let token = auth.do_get_access_token().await?;
+    println!("AccessToken: {}", token.access_token());
+    println!("RefreshToken: {}", token.refresh_token());
+    println!("Profile: {:#?}", token.profile());
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     auth.do_refresh_token().await?;
-    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     auth.do_revoke_token().await?;
     Ok(())
 }
