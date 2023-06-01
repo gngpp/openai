@@ -16,9 +16,9 @@ use rand::Rng;
 use reqwest::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
 
-use crate::{OAuthError, OAuthResult};
+use crate::{token, OAuthError, OAuthResult};
 
-const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
+const UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
 const OPENAI_OAUTH_URL: &str = "https://auth0.openai.com";
 const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth0.openai.com/oauth/token";
@@ -26,12 +26,12 @@ const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-pub struct OpenAIOAuthBuilder {
+pub struct OpenOAuth0Builder {
     client_builder: reqwest::ClientBuilder,
-    oauth: OpenAIOAuth,
+    oauth: OpenOAuth0,
 }
 
-impl OpenAIOAuthBuilder {
+impl OpenOAuth0Builder {
     pub fn email(mut self, email: String) -> Self {
         self.oauth.email = email;
         self
@@ -66,22 +66,26 @@ impl OpenAIOAuthBuilder {
         self
     }
 
-    pub fn client_cookie_store(mut self, store: bool) -> Self {
+    pub fn cookie_store(mut self, store: bool) -> Self {
         self.client_builder = self.client_builder.cookie_store(store);
         self
     }
 
-    pub fn build(mut self) -> OpenAIOAuth {
+    pub fn token_store<S: token::AuthenticateTokenStore + 'static>(mut self, store: S) -> Self {
+        self.oauth.store = Box::new(store);
+        self
+    }
+
+    pub fn build(mut self) -> OpenOAuth0 {
         self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
         self.oauth
     }
 
-    pub fn builder() -> OpenAIOAuthBuilder {
+    pub fn builder() -> OpenOAuth0Builder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
-        let mut client_builder = Client::builder();
-        client_builder = client_builder.redirect(Policy::custom(|attempt| {
+        let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
             if attempt
                 .url()
                 .to_string()
@@ -94,43 +98,36 @@ impl OpenAIOAuthBuilder {
             }
         }));
 
-        OpenAIOAuthBuilder {
+        OpenOAuth0Builder {
             client_builder,
-            oauth: OpenAIOAuth {
+            oauth: OpenOAuth0 {
                 email: String::new(),
                 password: String::new(),
                 session: Client::new(),
                 cache: false,
                 mfa: None,
                 req_headers,
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                expires: None,
                 email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
                     .expect("Regex::new()"),
+                store: Box::new(token::MemStore::new()),
             },
         }
     }
 }
 
-#[derive(Debug)]
-pub struct OpenAIOAuth {
+pub struct OpenOAuth0 {
     email: String,
     session: Client,
     password: String,
     mfa: Option<String>,
     cache: bool,
     req_headers: HeaderMap,
-    access_token: Option<String>,
-    refresh_token: Option<String>,
-    id_token: Option<String>,
-    expires: Option<chrono::DateTime<chrono::Utc>>,
     email_regex: Regex,
+    store: Box<dyn token::AuthenticateTokenStore>,
 }
 
 // api: https://auth0.openai.com
-impl OpenAIOAuth {
+impl OpenOAuth0 {
     fn generate_code_verifier() -> String {
         let token: [u8; 32] = rand::thread_rng().gen();
         let code_verifier = general_purpose::URL_SAFE
@@ -180,37 +177,24 @@ impl OpenAIOAuth {
         url_params["state"].to_owned()
     }
 
-    pub fn get_user_info(&self) -> OAuthResult<OpenAIUserInfo> {
-        if let Some(id_token) = self.id_token.clone() {
-            let split_jwt_strings: Vec<_> = id_token.split('.').collect();
-            let jwt_body = split_jwt_strings
-                .get(1)
-                .ok_or(OAuthError::InvalidAccessToken)?;
-            let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
-            let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
-            let user_info = serde_json::from_str::<OpenAIUserInfo>(&converted_jwt_body)?;
-            return Ok(user_info);
-        }
-        anyhow::bail!(OAuthError::FailedLoginIn)
-    }
-
-    pub async fn authenticate(&mut self) -> OAuthResult<String> {
-        if self.cache
-            && self.access_token.is_some()
-            && self.expires.is_some()
-            && self.expires.ok_or(OAuthError::TokenExipired)? > chrono::Utc::now()
-        {
-            return Ok(self.access_token.clone().ok_or(OAuthError::FailedLoginIn)?);
+    pub async fn do_get_access_token(&mut self) -> OAuthResult<token::AuthenticateToken> {
+        let token = self.store.get_token(&self.email).await?;
+        if self.cache && token.is_some() {
+            return Ok(token.ok_or(OAuthError::FailedLoginIn).and_then(|op| {
+                if op.is_expired() {
+                    return Err(OAuthError::FailedLoginIn);
+                }
+                Ok(op)
+            })?);
         }
 
         if !self.email_regex.is_match(&self.email) || self.password.is_empty() {
             anyhow::bail!(OAuthError::InvalidEmailOrPassword)
         }
-
-        self.login().await
+        self.login_handler().await
     }
 
-    async fn login(&mut self) -> OAuthResult<String> {
+    async fn login_handler(&mut self) -> OAuthResult<token::AuthenticateToken> {
         let code_verifier = Self::generate_code_verifier();
         let code_challenge = Self::generate_code_challenge(&code_verifier);
 
@@ -225,17 +209,17 @@ impl OpenAIOAuth {
 
         if resp.status().is_success() {
             let state = Self::get_callback_state(resp.url());
-            self.identifier_handler(&code_verifier, &state).await
+            self.login_handler0(&code_verifier, &state).await
         } else {
             anyhow::bail!(OAuthError::InvalidLoginUrl)
         }
     }
 
-    async fn identifier_handler(
+    async fn login_handler0(
         &mut self,
         code_verifier: &str,
         state: &str,
-    ) -> anyhow::Result<String> {
+    ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!(
             "https://auth0.openai.com/u/login/identifier?state={}",
             state
@@ -269,20 +253,20 @@ impl OpenAIOAuth {
                 .get("Location")
                 .ok_or(OAuthError::InvalidLocation)?
                 .to_str()?;
-            self.login_handler0(code_verifier, state, location, &url)
+            self.login_handler1(code_verifier, state, location, &url)
                 .await
         } else {
             anyhow::bail!(OAuthError::InvalidEmail)
         }
     }
 
-    async fn login_handler0(
+    async fn login_handler1(
         &mut self,
         code_verifier: &str,
         state: &str,
         location: &str,
         referrer: &str,
-    ) -> OAuthResult<String> {
+    ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
         headers.insert(reqwest::header::REFERER, HeaderValue::from_str(referrer)?);
@@ -309,7 +293,7 @@ impl OpenAIOAuth {
             if !location.starts_with("/authorize/resume?") {
                 anyhow::bail!(OAuthError::FailedLogin)
             }
-            self.login_handler1(code_verifier, location, &url).await
+            self.login_handler2(code_verifier, location, &url).await
         } else if resp.status().is_client_error() {
             anyhow::bail!(OAuthError::InvalidEmailOrPassword)
         } else {
@@ -318,12 +302,12 @@ impl OpenAIOAuth {
     }
 
     #[async_recursion]
-    async fn login_handler1(
+    async fn login_handler2(
         &mut self,
         code_verifier: &str,
         location: &str,
         referrer: &str,
-    ) -> OAuthResult<String> {
+    ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
         headers.insert(
@@ -342,18 +326,22 @@ impl OpenAIOAuth {
                 if self.mfa.is_none() {
                     anyhow::bail!(OAuthError::MFARequired)
                 }
-                return self.login_handler2(code_verifier, location).await;
+                return self.login_handler3(code_verifier, location).await;
             } else if !location.starts_with(OPENAI_OAUTH_CALLBACK_URL) {
                 anyhow::bail!(OAuthError::FailedCallbackURL)
             } else {
-                return self.do_get_access_token(code_verifier, location).await;
+                return self.login_handler4(code_verifier, location).await;
             }
         }
         anyhow::bail!(OAuthError::FailedLogin)
     }
 
     #[async_recursion]
-    async fn login_handler2(&mut self, code_verifier: &str, location: &str) -> OAuthResult<String> {
+    async fn login_handler3(
+        &mut self,
+        code_verifier: &str,
+        location: &str,
+    ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let state = Self::get_callback_state(&Url::parse(&url)?);
         let data = json!({
@@ -390,7 +378,7 @@ impl OpenAIOAuth {
                     anyhow::bail!(OAuthError::MFAFailed)
                 }
             }
-            return self.login_handler1(code_verifier, location, &url).await;
+            return self.login_handler2(code_verifier, location, &url).await;
         }
         if status.is_client_error() {
             anyhow::bail!(OAuthError::InvalidMFACode)
@@ -398,11 +386,11 @@ impl OpenAIOAuth {
         anyhow::bail!(OAuthError::FailedLogin)
     }
 
-    async fn do_get_access_token(
+    async fn login_handler4(
         &mut self,
         code_verifier: &str,
         callback_url: &str,
-    ) -> OAuthResult<String> {
+    ) -> OAuthResult<token::AuthenticateToken> {
         let url = Url::parse(callback_url)?;
 
         let code = Self::get_callback_code(&url)?;
@@ -424,26 +412,27 @@ impl OpenAIOAuth {
             .await?;
 
         if resp.status().is_success() {
-            let result = resp.json::<AccessTokenResult>().await?;
-            self.expires = Some(
-                chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
-                    - chrono::Duration::minutes(5),
-            );
-
-            let access_token = result.access_token.clone();
-            self.access_token = Some(result.access_token);
-            self.refresh_token = Some(result.refresh_token);
-            self.id_token = Some(result.id_token);
-            return Ok(access_token);
+            let result = resp.json::<AccessToken>().await?;
+            let authentication_token = token::AuthenticateToken::try_from(result)?;
+            let access_token = authentication_token.clone();
+            self.store
+                .set_token(authentication_token)
+                .await
+                .and(Ok(access_token))
+        } else {
+            anyhow::bail!(OAuthError::FailedLogin)
         }
-        anyhow::bail!(OAuthError::FailedLogin)
     }
 
-    pub async fn do_refresh_token(&mut self) -> OAuthResult<String> {
-        let refresh_token = self
-            .refresh_token
-            .clone()
+    pub async fn do_refresh_token(&mut self) -> OAuthResult<token::AuthenticateToken> {
+        let token = self
+            .store
+            .get_token(&self.email)
+            .await?
             .ok_or(OAuthError::FailedLoginIn)?;
+
+        let refresh_token = token.refresh_token();
+
         let data = json!({
             "redirect_uri": OPENAI_OAUTH_CALLBACK_URL.to_string(),
             "grant_type": "refresh_token".to_string(),
@@ -458,28 +447,31 @@ impl OpenAIOAuth {
             .send()
             .await?;
         if resp.status().is_success() {
-            let result = resp.json::<RefreshTokenResult>().await?;
-            self.expires = Some(
-                chrono::Utc::now() + chrono::Duration::seconds(i64::from(result.expires_in))
-                    - chrono::Duration::minutes(5),
-            );
+            let result = resp.json::<RefreshToken>().await.map(|mut op| {
+                op.refresh_token = refresh_token.to_owned();
+                op
+            })?;
 
-            let token = result.access_token.clone();
-            self.access_token = Some(result.access_token);
-            self.id_token = Some(result.id_token);
-            return Ok(token);
+            let authenticate_token = token::AuthenticateToken::try_from(result)?;
+            let access_token = authenticate_token.clone();
+            self.store
+                .set_token(authenticate_token)
+                .await
+                .and(Ok(access_token))
+        } else {
+            anyhow::bail!(resp.json::<OAuthError>().await?)
         }
-        anyhow::bail!(resp.json::<OAuthError>().await?)
     }
 
     pub async fn do_revoke_token(&mut self) -> OAuthResult<()> {
-        let refresh_token = self
-            .refresh_token
-            .clone()
+        let token = self
+            .store
+            .get_token(&self.email)
+            .await?
             .ok_or(OAuthError::FailedLoginIn)?;
         let data = json!({
             "client_id": CLIENT_ID.to_string(),
-            "token": refresh_token
+            "token": token.refresh_token()
         });
         let resp = self
             .session
@@ -487,41 +479,27 @@ impl OpenAIOAuth {
             .json(&data)
             .send()
             .await?;
-        if !resp.status().is_success() {
+        if resp.status().is_success() {
+            self.store.delete_token(&self.email).await.and(Ok(()))
+        } else {
             anyhow::bail!(resp.json::<OAuthError>().await?)
         }
-        Ok(())
     }
 }
 
 #[derive(Debug, Deserialize)]
-struct AccessTokenResult {
-    access_token: String,
-    refresh_token: String,
-    id_token: String,
-    expires_in: u32,
+pub struct AccessToken {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub id_token: String,
+    pub expires_in: i64,
 }
 
 #[derive(Debug, Deserialize)]
-struct RefreshTokenResult {
-    access_token: String,
-    id_token: String,
-    expires_in: u32,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-pub struct OpenAIUserInfo {
-    nickname: String,
-    name: String,
-    picture: String,
-    updated_at: String,
-    email_verified: bool,
-    email: String,
-    iss: String,
-    aud: String,
-    iat: i64,
-    exp: i64,
-    sub: String,
-    auth_time: i64,
+pub struct RefreshToken {
+    pub access_token: String,
+    #[serde(default)]
+    pub refresh_token: String,
+    pub id_token: String,
+    pub expires_in: i64,
 }
