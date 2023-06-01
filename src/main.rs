@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use std::{io::Write, sync::Once};
+use std::{io::Write, path::PathBuf, sync::Once};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, arg_required_else_help = true)]
@@ -40,11 +40,11 @@ enum SubCommands {
         #[clap(short = 'P', long, default_value = "7999", value_parser = parse_port_in_range)]
         port: u16,
     },
-    /// Start configuration
+    /// Setting configuration
     Config {
-        /// Specify an access token storage file path
-        #[clap(short, long)]
-        token_storage: Option<String>,
+        /// Working directory, refresh_token will be stored in there if specified
+        #[clap(short = 'W', long)]
+        workdir: Option<PathBuf>,
     },
 }
 

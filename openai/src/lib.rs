@@ -4,37 +4,38 @@ pub mod token;
 
 use serde::Deserialize;
 
+pub const DEFAULT_TOKEN_FILE: &str = ".opengpt-access_tokens";
 pub type OAuthResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 #[derive(thiserror::Error, Deserialize, Debug)]
 pub enum OAuthError {
-    #[error("Invalid request (error {error:?}, error_description {error_description:?})")]
+    #[error("fnvalid request (error {error:?}, error_description {error_description:?})")]
     BadRequest {
         error: String,
         error_description: String,
     },
-    #[error("Failed to get public key")]
+    #[error("failed to get public key")]
     FailedPubKeyRequest,
-    #[error("Failed login")]
+    #[error("failed login")]
     FailedLogin,
-    #[error("Failed logged in")]
+    #[error("failed logged in")]
     FailedLoginIn,
-    #[error("Failed get code from callback url")]
+    #[error("failed get code from callback url")]
     FailedCallbackCode,
-    #[error("Failed callback url")]
+    #[error("failed callback url")]
     FailedCallbackURL,
-    #[error("Invalid request login url")]
+    #[error("invalid request login url")]
     InvalidLoginUrl,
-    #[error("Invalid email or password")]
+    #[error("invalid email or password")]
     InvalidEmailOrPassword,
-    #[error("Invalid email")]
+    #[error("invalid email")]
     InvalidEmail,
-    #[error("Invalid Location")]
+    #[error("invalid Location")]
     InvalidLocation,
-    #[error("Invalid token")]
+    #[error("invalid token")]
     InvalidAccessToken,
-    #[error("Token expired")]
+    #[error("token expired")]
     TokenExpired,
     #[error("Invalid MFA code")]
     InvalidMFACode,
@@ -42,4 +43,18 @@ pub enum OAuthError {
     MFAFailed,
     #[error("MFA required")]
     MFARequired,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TokenStoreError {
+    #[error("failed to access token")]
+    AccessError,
+    #[error("token not found error")]
+    NotFoundError,
+    #[error("failed token deserialize")]
+    DeserializeError,
+    #[error("failed to verify access_token")]
+    AccessTokenVerifyError,
+    #[error("failed to create default token store file")]
+    CreateDefaultTokenFileError,
 }
