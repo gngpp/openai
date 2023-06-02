@@ -1,4 +1,4 @@
-module github.com/linweiyuan/go-chatgpt-api
+module gohttp
 
 go 1.18
 
