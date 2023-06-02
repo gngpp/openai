@@ -7,6 +7,7 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    
     let out = std::process::Command::new("sh")
         .arg("-c")
         .arg("./build.sh")

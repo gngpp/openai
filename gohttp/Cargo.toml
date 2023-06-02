@@ -9,3 +9,7 @@ edition = "2021"
 
 [build-dependencies]
 bindgen = "0.65.1"
+
+[lib]
+name = "gohttp"
+path = "src/lib.rs"
