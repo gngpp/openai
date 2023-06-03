@@ -324,11 +324,6 @@ func buildCookies(cookies []tls_client_cffi_src.CookieInput) []*http.Cookie {
 	return ret
 }
 
-//export Add
-func Add(a, b C.int) C.int {
-    return a + b
-}
-
 func main() {
 
 }
