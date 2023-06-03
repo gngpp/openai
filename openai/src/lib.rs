@@ -1,4 +1,5 @@
 pub mod chatgpt;
+pub mod log;
 pub mod oauth;
 pub mod token;
 

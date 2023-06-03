@@ -125,24 +125,27 @@ pub struct AuthenticateToken {
 }
 
 impl AuthenticateToken {
-    pub fn email(&self) -> String {
-        self.profile.email.clone()
+    pub fn email(&self) -> &str {
+        &self.profile.email
     }
 
     pub fn access_token(&self) -> &str {
-        self.access_token.as_str()
+        &self.access_token
     }
 
+    pub fn get_bearer_access_token(&self) -> String {
+        format!("Bearer {}", &self.access_token)
+    }
     pub fn refresh_token(&self) -> &str {
-        self.refresh_token.as_str()
+        &self.refresh_token
     }
 
     pub fn is_expired(&self) -> bool {
         chrono::Utc::now().timestamp() > self.expires
     }
 
-    pub fn profile(&self) -> Profile {
-        self.profile.clone()
+    pub fn profile(&self) -> &Profile {
+        &self.profile
     }
 }
 

@@ -2394,6 +2394,3 @@ extern "C" {
 extern "C" {
     pub fn Request(requestParams: *mut ::std::os::raw::c_char) -> *mut ::std::os::raw::c_char;
 }
-extern "C" {
-    pub fn Add(a: ::std::os::raw::c_int, b: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
-}

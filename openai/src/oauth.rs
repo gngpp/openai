@@ -26,95 +26,6 @@ const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-pub struct OpenOAuth0Builder {
-    client_builder: reqwest::ClientBuilder,
-    oauth: OpenOAuth0,
-}
-
-impl OpenOAuth0Builder {
-    pub fn email(mut self, email: String) -> Self {
-        self.oauth.email = email;
-        self
-    }
-
-    pub fn password(mut self, password: String) -> Self {
-        self.oauth.password = password;
-        self
-    }
-
-    pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
-        if let Some(proxy) = proxy {
-            self.client_builder = self.client_builder.proxy(proxy);
-        } else {
-            self.client_builder = self.client_builder.no_proxy();
-        }
-        self
-    }
-
-    pub fn cache(mut self, cache: bool) -> Self {
-        self.oauth.cache = cache;
-        self
-    }
-
-    pub fn mfa(mut self, mfa: Option<String>) -> Self {
-        self.oauth.mfa = mfa;
-        self
-    }
-
-    pub fn client_timeout(mut self, timeout: Duration) -> Self {
-        self.client_builder = self.client_builder.timeout(timeout);
-        self
-    }
-
-    pub fn cookie_store(mut self, store: bool) -> Self {
-        self.client_builder = self.client_builder.cookie_store(store);
-        self
-    }
-
-    pub fn token_store<S: token::AuthenticateTokenStore + 'static>(mut self, store: S) -> Self {
-        self.oauth.store = Box::new(store);
-        self
-    }
-
-    pub fn build(mut self) -> OpenOAuth0 {
-        self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
-        self.oauth
-    }
-
-    pub fn builder() -> OpenOAuth0Builder {
-        let mut req_headers = HeaderMap::new();
-        req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
-
-        let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
-            if attempt
-                .url()
-                .to_string()
-                .contains("https://auth0.openai.com/u/login/identifier")
-            {
-                // redirects to 'https://auth0.openai.com/u/login/identifier'
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }));
-
-        OpenOAuth0Builder {
-            client_builder,
-            oauth: OpenOAuth0 {
-                email: String::new(),
-                password: String::new(),
-                session: Client::new(),
-                cache: false,
-                mfa: None,
-                req_headers,
-                email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
-                    .expect("Regex::new()"),
-                store: Box::new(token::MemStore::new()),
-            },
-        }
-    }
-}
-
 pub struct OpenOAuth0 {
     email: String,
     session: Client,
@@ -502,4 +413,93 @@ pub struct RefreshToken {
     pub refresh_token: String,
     pub id_token: String,
     pub expires_in: i64,
+}
+
+pub struct OpenOAuth0Builder {
+    client_builder: reqwest::ClientBuilder,
+    oauth: OpenOAuth0,
+}
+
+impl OpenOAuth0Builder {
+    pub fn email(mut self, email: String) -> Self {
+        self.oauth.email = email;
+        self
+    }
+
+    pub fn password(mut self, password: String) -> Self {
+        self.oauth.password = password;
+        self
+    }
+
+    pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
+        if let Some(proxy) = proxy {
+            self.client_builder = self.client_builder.proxy(proxy);
+        } else {
+            self.client_builder = self.client_builder.no_proxy();
+        }
+        self
+    }
+
+    pub fn cache(mut self, cache: bool) -> Self {
+        self.oauth.cache = cache;
+        self
+    }
+
+    pub fn mfa(mut self, mfa: Option<String>) -> Self {
+        self.oauth.mfa = mfa;
+        self
+    }
+
+    pub fn client_timeout(mut self, timeout: Duration) -> Self {
+        self.client_builder = self.client_builder.timeout(timeout);
+        self
+    }
+
+    pub fn cookie_store(mut self, store: bool) -> Self {
+        self.client_builder = self.client_builder.cookie_store(store);
+        self
+    }
+
+    pub fn token_store<S: token::AuthenticateTokenStore + 'static>(mut self, store: S) -> Self {
+        self.oauth.store = Box::new(store);
+        self
+    }
+
+    pub fn build(mut self) -> OpenOAuth0 {
+        self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
+        self.oauth
+    }
+
+    pub fn builder() -> OpenOAuth0Builder {
+        let mut req_headers = HeaderMap::new();
+        req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
+
+        let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
+            if attempt
+                .url()
+                .to_string()
+                .contains("https://auth0.openai.com/u/login/identifier")
+            {
+                // redirects to 'https://auth0.openai.com/u/login/identifier'
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }));
+
+        OpenOAuth0Builder {
+            client_builder,
+            oauth: OpenOAuth0 {
+                email: String::new(),
+                password: String::new(),
+                session: Client::new(),
+                cache: false,
+                mfa: None,
+                req_headers,
+                email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
+                    .expect("Regex::new()"),
+                store: Box::new(token::MemStore::new()),
+            },
+        }
+    }
 }
