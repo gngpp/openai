@@ -24,7 +24,7 @@ const HEADER_OAI_CLIENT: &str = "ios";
 const HEADER_UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 const HEADER_HOST: &str = "ios.chat.openai.com";
 const URL_IOS_CHAT_BASE: &str = "https://ios.chat.openai.com";
-const DEVICE_TOKEN: &str = "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";
+const DEVICE_TOKEN: &str = "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";
 const BUNDLE_ID: &str = "com.openai.chat";
 
 pub struct IosChatApi {
@@ -126,7 +126,6 @@ impl IosChatApi {
             true
         };
         drop(last_checked);
-
         if expired {
             let payload = DeviceCheckPayloadBuilder::default()
                 .device_token(DEVICE_TOKEN.to_string())
@@ -134,7 +133,7 @@ impl IosChatApi {
                 .build()?;
 
             let token = self.access_token.read().await;
-            let url = format!("{URL_IOS_CHAT_BASE}{}", "/backend-api/devicecheck");
+            let url = format!("{URL_IOS_CHAT_BASE}/backend-api/devicecheck");
             let resp = self
                 .client
                 .post(&url)
@@ -149,6 +148,7 @@ impl IosChatApi {
                         debug!("cookie expires: {:?}", cookie.expires());
                         let mut expires = self.expires.write().await;
                         *expires = cookie.expires();
+                        println!("{:?}", cookie.expires())
                     }
                 }
                 Err(err) => {
@@ -188,7 +188,6 @@ impl IosChatApi {
 #[async_trait]
 impl Api for IosChatApi {
     async fn get_models(&self) -> ApiResult<resp::ModelsResponse> {
-        self.device_check().await?;
         self.request(
             format!("{URL_IOS_CHAT_BASE}/backend-api/models"),
             Method::GET,

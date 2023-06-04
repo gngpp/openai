@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
 use openai::chatgpt::Api;
-use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,9 +21,8 @@ async fn main() -> anyhow::Result<()> {
         .cookie_store(true)
         .build();
 
-    let account_check = api.account_check().await?;
-    println!("{:#?}", account_check);
-
+    // let account_check = api.account_check().await?;
+    // println!("{:#?}", account_check);
     let result = api.get_models().await?;
     println!("{:#?}", result);
     Ok(())
