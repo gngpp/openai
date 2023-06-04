@@ -7,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
     let store = openai::token::FileStore::default();
-    let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    let mut auth = openai::oauth::OAuthBuilder::builder()
         .email(email)
         .password(password)
         .cache(true)
@@ -34,59 +34,10 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
     let body = gohttp::call_request(payload)?;
     if body.is_success() {
-        let data = body.json::<openai::chatgpt::model::ModelsData>().await?;
-        println!("{:#?}", data);
+        println!("{:#?}", body);
+    } else {
+        println!("{:?}", body)
     }
 
     Ok(())
-}
-
-#[macro_export]
-macro_rules! info {
-    // trace!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
-    // trace!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::info!("[{}] {}",std::panic::Location::caller(), $($arg)+));
-
-    // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::info!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
-}
-
-#[macro_export]
-macro_rules! debug {
-    // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
-    // info!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::debug!("[{}] {}",std::panic::Location::caller(), $($arg)+));
-
-    // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::debug!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
-}
-
-#[macro_export]
-macro_rules! warn {
-    // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
-    // info!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::warn!("[{}] {}",std::panic::Location::caller(), $($arg)+));
-
-    // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::warn!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
-}
-
-#[macro_export]
-macro_rules! trace {
-    // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
-    // info!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::trace!("[{}] {}",std::panic::Location::caller(), $($arg)+));
-
-    // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::trace!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
-}
-
-#[macro_export]
-macro_rules! error {
-    // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
-    // info!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::error!("[{}] {}",std::panic::Location::caller(), $($arg)+));
-
-    // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::error!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
 }

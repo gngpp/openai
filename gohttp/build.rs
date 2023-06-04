@@ -31,7 +31,7 @@ fn main() {
         .generate()
         .expect("unable to generate hello bindings");
 
-    let out_path = PathBuf::from(workdir.join("src")).join("bindings.rs");
+    let out_path = PathBuf::from(workdir.join("src")).join("ffi.rs");
     bindings
         .write_to_file(&out_path)
         .expect("couldn't write bindings!");

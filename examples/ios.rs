@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use openai::chatgpt::Api;
 use serde::{Deserialize, Serialize};
 
 #[tokio::main]
@@ -7,77 +8,28 @@ async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
     let store = openai::token::FileStore::default();
-    let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    let mut auth = openai::oauth::OAuthBuilder::builder()
         .email(email)
         .password(password)
         .cache(true)
         .cookie_store(true)
         .token_store(store)
-        .client_timeout(std::time::Duration::from_secs(20))
         .build();
     let token = auth.do_get_access_token().await?;
-    println!("AccessToken: {}", token.access_token());
-    println!("RefreshToken: {}", token.refresh_token());
     println!("Profile: {:#?}", token.profile());
 
-    let client = reqwest::Client::new();
-    let resp = client.get("https://ios.chat.openai.com/backend-api/conversations?offset=0&limit=20&order=updated&expand=true")
-    .header("OAI-Client-Type","ios")
-    .header(reqwest::header::AUTHORIZATION,token.get_bearer_access_token())
-    .header(reqwest::header::USER_AGENT,"ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)")
-    .header("Cookie", "_devicecheck=user-N9D93ttsgIr3LItSzNNyAfiN:1685522780-9Ud0OEcUPerkXnoQ%2BCB2ACbsb2KUHfmqx52jg9q%2FZjc%3D")
-    .header(reqwest::header::CONTENT_TYPE, "application/json")
-    .send().await?;
+    let api = openai::chatgpt::ios::IosChatApiBuilder::builder()
+        .access_token(token.access_token().to_string())
+        .client_timeout(std::time::Duration::from_secs(3))
+        .cookie_store(true)
+        .build();
 
-    if resp.status().is_success() {
-        let bytes = resp.bytes().await?;
-        let data: Conversations = serde_json::from_slice(&bytes)?;
-        println!("{}", serde_json::to_string_pretty(&data)?)
-    } else {
-        let bytes = resp.bytes().await?;
-        println!("{}", String::from_utf8(bytes.to_vec())?)
-    }
+    let account_check = api.account_check().await?;
+    println!("{:#?}", account_check);
+
+    let result = api.get_models().await?;
+    println!("{:#?}", result);
     Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
-struct Mapping {
-    id: String,
-    parent: Option<String>,
-    message: Option<Message>,
-    children: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Message {
-    id: String,
-    create_time: f64,
-    status: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Content {
-    content_type: String,
-    parts: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Items {
-    id: String,
-    title: String,
-    create_time: String,
-    update_time: String,
-    current_node: String,
-    mapping: HashMap<String, Mapping>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Conversations {
-    items: Vec<Items>,
-    total: i64,
-    limit: i64,
-    offset: i64,
-    has_missing_conversations: bool,
 }
 
 // use std::pin::Pin;

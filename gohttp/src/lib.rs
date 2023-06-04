@@ -1,11 +1,9 @@
-pub mod bindings;
+pub mod ffi;
 pub mod model;
 
 use std::ffi::CString;
 
 use model::RequestPayload;
-
-use crate::bindings::Request;
 
 pub type GoHttpResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
@@ -21,7 +19,7 @@ pub fn call_request(payload: RequestPayload) -> GoHttpResult<model::ResponsePayl
     let str = serde_json::to_string(&payload)?;
     let c_str = CString::new(str)?;
     let body_utf8 = unsafe {
-        let c_char = Request(c_str.into_raw());
+        let c_char = ffi::Request(c_str.into_raw());
         let body_c_char = CString::from_raw(c_char);
         let body_utf8 = body_c_char.to_bytes().to_vec();
         drop(body_c_char);
@@ -32,7 +30,6 @@ pub fn call_request(payload: RequestPayload) -> GoHttpResult<model::ResponsePayl
         "[gohttp] call_request body: {}",
         String::from_utf8(body_utf8.to_vec())?
     );
-    Ok(serde_json::from_slice::<model::ResponsePayload>(
-        &body_utf8,
-    )?)
+    let body = serde_json::from_slice::<model::ResponsePayload>(&body_utf8)?;
+    Ok(body)
 }

@@ -1,10 +1,21 @@
-use self::model::{ModelsData, TitleData};
-
 pub mod chat;
 pub mod ios;
-pub mod model;
+pub mod models;
+pub mod service;
 
-pub type OpenAIResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
+use async_trait::async_trait;
+
+use self::models::{req, resp};
+
+pub type ApiResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
+
+pub enum Method {
+    GET,
+    POST,
+    PATCH,
+    PUT,
+    DELETE,
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ApiError {
@@ -18,23 +29,46 @@ pub enum ApiError {
     SystemTimeExceptionError,
     #[error("failed authentication")]
     FailedAuthenticationError,
+    #[error("failed request")]
+    FailedRequest,
+    #[error("server error")]
+    ServerError,
 }
 
-pub trait Api {
-    /// gets the title based on the return message ID
-    fn get_title(&self, message_id: String) -> OpenAIResult<TitleData>;
+#[async_trait]
+pub trait Api: Sync + Send {
+    async fn get_models(&self) -> ApiResult<resp::ModelsResponse>;
 
-    fn get_models(&self) -> OpenAIResult<ModelsData>;
+    async fn account_check(&self) -> ApiResult<resp::AccountsCheckResponse>;
 
-    // fn get_conversations(&self, access_token: String) -> OpenAIResult<()>;
+    async fn get_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> ApiResult<resp::GetConversationResonse>;
 
-    // fn delete_conversation(&self, message_id: String) -> OpenAIResult<()>;
+    async fn get_conversations(&self) -> ApiResult<resp::GetConversationsResponse>;
 
-    // fn get_conversation(&self, message_id: String) -> OpenAIResult<()>;
+    async fn create_conversation(&self, payload: req::CreateConversationRequest) -> ApiResult<()>;
+
+    async fn delete_conversation(
+        &self,
+        payload: req::DeleteConversationRequest,
+    ) -> ApiResult<resp::DeleteConversationResponse>;
+
+    async fn delete_conversations(&self, payload: req::DeleteConversationRequest) -> ApiResult<()>;
+
+    async fn rename_conversation(
+        &self,
+        payload: req::RenameConversationRequest,
+    ) -> ApiResult<resp::RenameConversationResponse>;
 }
 
-#[track_caller]
-pub fn print_caller() {
-    use std::panic::Location;
-    println!("called from {}", Location::caller());
+trait RefreshToken: Sync + Send {
+    /// refresh access token
+    fn refresh_token(&mut self, access_token: String);
+}
+
+trait ToConversationID {
+    /// conversation to url subpath
+    fn to_conversation_id(&self) -> &str;
 }

@@ -29,73 +29,6 @@ afkEyGvifAMJFPwO78=\n\
 const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
 const UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 
-#[derive(Deserialize)]
-struct Keys {
-    alg: String,
-    x5c: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct KeyResult {
-    keys: Vec<Keys>,
-}
-
-async fn keys() -> TokenResult<KeyResult> {
-    use reqwest::Client;
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build()?;
-    let resp = client
-        .get(OAUTH_PUBLIC_KEY_URL)
-        .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
-        .send()
-        .await?;
-    if resp.status().is_success() {
-        let keys = resp.json::<KeyResult>().await?;
-        return Ok(keys);
-    }
-    anyhow::bail!(OAuthError::FailedPubKeyRequest)
-}
-
-fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
-    let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
-    let verifier = Verifier::create().build()?;
-    let claims: Value = verifier.verify(&token, &alg)?;
-    let claims_str = claims.to_string();
-    if claims_str.contains("https://openai.openai.auth0app.com/userinfo")
-        && claims_str.contains("https://auth0.openai.com/")
-        && claims_str.contains("https://api.openai.com/v1")
-        && claims_str.contains("model.read")
-        && claims_str.contains("model.request")
-    {
-        return Ok(());
-    }
-    anyhow::bail!(OAuthError::InvalidAccessToken)
-}
-
-pub async fn verify_access_token(token: &str) -> TokenResult<()> {
-    if token.starts_with("sk-") {
-        return Ok(());
-    }
-    match verify(token, PUBLIC_KEY.as_bytes(), AlgorithmID::RS256) {
-        Ok(_) => Ok(()),
-        Err(_) => {
-            let key_result = keys().await?;
-            let key = key_result
-                .keys
-                .first()
-                .ok_or(OAuthError::FailedPubKeyRequest)?;
-            let pub_key = key.x5c.first().ok_or(OAuthError::FailedPubKeyRequest)?;
-            let pub_key = format!(
-                "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
-                pub_key
-            );
-            let alg = AlgorithmID::from_str(key.alg.as_str())?;
-            verify(token, pub_key.as_bytes(), alg)
-        }
-    }
-}
-
 use std::{collections::HashMap, sync::RwLock};
 
 use async_trait::async_trait;
@@ -347,5 +280,72 @@ impl AuthenticateTokenStore for FileStore {
         let json = serde_json::to_string_pretty(&data)?;
         tokio::fs::write(&self.0, json).await?;
         Ok(v)
+    }
+}
+
+#[derive(Deserialize)]
+struct Keys {
+    alg: String,
+    x5c: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct KeyResult {
+    keys: Vec<Keys>,
+}
+
+async fn keys() -> TokenResult<KeyResult> {
+    use reqwest::Client;
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()?;
+    let resp = client
+        .get(OAUTH_PUBLIC_KEY_URL)
+        .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
+        .send()
+        .await?;
+    if resp.status().is_success() {
+        let keys = resp.json::<KeyResult>().await?;
+        return Ok(keys);
+    }
+    anyhow::bail!(OAuthError::FailedPubKeyRequest)
+}
+
+fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
+    let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
+    let verifier = Verifier::create().build()?;
+    let claims: Value = verifier.verify(&token, &alg)?;
+    let claims_str = claims.to_string();
+    if claims_str.contains("https://openai.openai.auth0app.com/userinfo")
+        && claims_str.contains("https://auth0.openai.com/")
+        && claims_str.contains("https://api.openai.com/v1")
+        && claims_str.contains("model.read")
+        && claims_str.contains("model.request")
+    {
+        return Ok(());
+    }
+    anyhow::bail!(OAuthError::InvalidAccessToken)
+}
+
+pub async fn verify_access_token(token: &str) -> TokenResult<()> {
+    if token.starts_with("sk-") {
+        return Ok(());
+    }
+    match verify(token, PUBLIC_KEY.as_bytes(), AlgorithmID::RS256) {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            let key_result = keys().await?;
+            let key = key_result
+                .keys
+                .first()
+                .ok_or(OAuthError::FailedPubKeyRequest)?;
+            let pub_key = key.x5c.first().ok_or(OAuthError::FailedPubKeyRequest)?;
+            let pub_key = format!(
+                "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                pub_key
+            );
+            let alg = AlgorithmID::from_str(key.alg.as_str())?;
+            verify(token, pub_key.as_bytes(), alg)
+        }
     }
 }

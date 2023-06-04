@@ -240,7 +240,6 @@ pub struct ResponsePayload {
     id: String,
     session_id: Option<String>,
     status: StatusCode,
-    target: String,
     body: String,
     #[serde(deserialize_with = "deserialize_null_default")]
     headers: HeaderMap,
@@ -256,10 +255,6 @@ impl ResponsePayload {
 
     pub fn session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
-    }
-
-    pub fn target(&self) -> &str {
-        &self.target
     }
 
     pub fn use_protocol(&self) -> &str {

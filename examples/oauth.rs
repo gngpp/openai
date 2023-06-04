@@ -3,7 +3,7 @@ async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
     let store = openai::token::FileStore::default();
-    let mut auth = openai::oauth::OpenOAuth0Builder::builder()
+    let mut auth = openai::oauth::OAuthBuilder::builder()
         .email(email)
         .password(password)
         .cache(true)

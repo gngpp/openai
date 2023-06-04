@@ -26,7 +26,7 @@ const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
-pub struct OpenOAuth0 {
+pub struct OAuth {
     email: String,
     session: Client,
     password: String,
@@ -38,7 +38,7 @@ pub struct OpenOAuth0 {
 }
 
 // api: https://auth0.openai.com
-impl OpenOAuth0 {
+impl OAuth {
     fn generate_code_verifier() -> String {
         let token: [u8; 32] = rand::thread_rng().gen();
         let code_verifier = general_purpose::URL_SAFE
@@ -415,12 +415,12 @@ pub struct RefreshToken {
     pub expires_in: i64,
 }
 
-pub struct OpenOAuth0Builder {
-    client_builder: reqwest::ClientBuilder,
-    oauth: OpenOAuth0,
+pub struct OAuthBuilder {
+    builder: reqwest::ClientBuilder,
+    oauth: OAuth,
 }
 
-impl OpenOAuth0Builder {
+impl OAuthBuilder {
     pub fn email(mut self, email: String) -> Self {
         self.oauth.email = email;
         self
@@ -433,9 +433,9 @@ impl OpenOAuth0Builder {
 
     pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
         if let Some(proxy) = proxy {
-            self.client_builder = self.client_builder.proxy(proxy);
+            self.builder = self.builder.proxy(proxy);
         } else {
-            self.client_builder = self.client_builder.no_proxy();
+            self.builder = self.builder.no_proxy();
         }
         self
     }
@@ -451,12 +451,17 @@ impl OpenOAuth0Builder {
     }
 
     pub fn client_timeout(mut self, timeout: Duration) -> Self {
-        self.client_builder = self.client_builder.timeout(timeout);
+        self.builder = self.builder.timeout(timeout);
+        self
+    }
+
+    pub fn client_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.builder = self.builder.connect_timeout(timeout);
         self
     }
 
     pub fn cookie_store(mut self, store: bool) -> Self {
-        self.client_builder = self.client_builder.cookie_store(store);
+        self.builder = self.builder.cookie_store(store);
         self
     }
 
@@ -465,12 +470,12 @@ impl OpenOAuth0Builder {
         self
     }
 
-    pub fn build(mut self) -> OpenOAuth0 {
-        self.oauth.session = self.client_builder.build().expect("ClientBuilder::build()");
+    pub fn build(mut self) -> OAuth {
+        self.oauth.session = self.builder.build().expect("ClientBuilder::build()");
         self.oauth
     }
 
-    pub fn builder() -> OpenOAuth0Builder {
+    pub fn builder() -> OAuthBuilder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
@@ -487,9 +492,9 @@ impl OpenOAuth0Builder {
             }
         }));
 
-        OpenOAuth0Builder {
-            client_builder,
-            oauth: OpenOAuth0 {
+        OAuthBuilder {
+            builder: client_builder,
+            oauth: OAuth {
                 email: String::new(),
                 password: String::new(),
                 session: Client::new(),
