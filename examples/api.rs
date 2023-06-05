@@ -15,10 +15,10 @@ async fn main() -> anyhow::Result<()> {
     let token = auth.do_get_access_token().await?;
     println!("Profile: {:#?}", token.profile());
 
-    let api = openai::chatgpt::ios::IosChatApiBuilder::builder()
+    let api = openai::chatgpt::api::IosChatApiBuilder::builder()
         .access_token(token.access_token().to_string())
-        .client_timeout(std::time::Duration::from_secs(3))
-        .cookie_store(true)
+        .client_timeout(std::time::Duration::from_secs(30))
+        // .cookie_store(true)
         .build();
 
     // let account_check = api.account_check().await?;

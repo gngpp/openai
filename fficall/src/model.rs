@@ -1,9 +1,9 @@
 use anyhow::Context;
 use derive_builder::Builder;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, ffi::CString};
 
-use crate::GoHttpResult;
+use crate::{ffi, FiiCallResult, SerdeError};
 
 pub type HeaderMap = HashMap<String, Vec<String>>;
 pub type Cookie = HashMap<String, String>;
@@ -248,6 +248,7 @@ pub struct ResponsePayload {
     used_protocol: String,
 }
 
+#[allow(dead_code)]
 impl ResponsePayload {
     pub fn id(&self) -> &str {
         &self.id
@@ -314,8 +315,28 @@ impl ResponsePayload {
         600 > self.status && self.status >= 500
     }
 
-    pub async fn json<T: DeserializeOwned>(self) -> GoHttpResult<T> {
+    pub async fn json<T: DeserializeOwned>(self) -> FiiCallResult<T> {
         let full = self.body.as_bytes();
-        serde_json::from_slice(full).context(crate::SerdeError::DeserializeError)
+        serde_json::from_slice(full).context(SerdeError::DeserializeError)
+    }
+
+    pub fn next<U: DeserializeOwned>(&self) -> FiiCallResult<Option<U>> {
+        let x = CString::new(self.id())?;
+        let body = unsafe { CString::from_raw(ffi::NextStreamLine(x.into_raw())) };
+        let s = String::from_utf8(body.to_bytes().to_vec())?;
+        if s.starts_with("data: [DONE]") {
+            return Ok(None);
+        }
+        serde_json::from_str(s.as_str()).context(SerdeError::DeserializeError)
+    }
+
+    pub fn text(&self) -> FiiCallResult<Option<String>> {
+        let x = CString::new(self.id())?;
+        let body = unsafe { CString::from_raw(ffi::NextStreamLine(x.into_raw())) };
+        let s = String::from_utf8(body.to_bytes().to_vec())?;
+        if s.starts_with("data: [DONE]") {
+            return Ok(None);
+        }
+        Ok(Some(s))
     }
 }

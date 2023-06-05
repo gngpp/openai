@@ -1,5 +1,4 @@
-pub mod chat;
-pub mod ios;
+pub mod api;
 pub mod models;
 pub mod service;
 

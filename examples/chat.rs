@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use gohttp::model::Identifier;
+use fficall::model::Identifier;
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,20 +24,47 @@ async fn main() -> anyhow::Result<()> {
         reqwest::header::AUTHORIZATION.to_string(),
         token.get_bearer_access_token().to_owned(),
     );
-    let payload = gohttp::model::RequestPayloadBuilder::default()
-        .request_url("https://chat.openai.com/backend-api/models".to_string())
-        .request_method(gohttp::model::RequestMethod::GET)
+
+    let payload = json!(
+        {
+            "action": "next",
+            "messages": [
+              {
+                "id": "ec526640-1cac-4a8d-a4c4-5102ccbcacbc",
+                "author": {
+                  "role": "user"
+                },
+                "content": {
+                  "content_type": "text",
+                  "parts": [
+                    "Rust Examples"
+                  ]
+                }
+              }
+            ],
+            "parent_message_id": "e8a1841c-2694-4434-ad4d-ed0b79813879",
+            "model": "text-davinci-002-render-sha",
+            "timezone_offset_min": -480,
+            "history_and_training_disabled": false
+          }
+    );
+    let payload = fficall::model::RequestPayloadBuilder::default()
+        .request_url("https://chat.openai.com/backend-api/conversation".to_string())
+        .request_method(fficall::model::RequestMethod::POST)
         .tls_client_identifier(Identifier::Chrome105)
         .headers(headers)
-        .timeout_seconds(2 as u32)
+        .request_body(payload.to_string())
+        .timeout_seconds(200 as u32)
         .without_cookie_jar(false)
         .build()
         .unwrap();
-    let body = gohttp::call_request(payload)?;
-    if body.is_success() {
-        println!("{:#?}", body);
+    let resp = fficall::call_request_stream(payload)?;
+    if resp.is_success() {
+      while let Some(text) = resp.text()? {
+          println!("{}", text)
+      }
     } else {
-        println!("{:?}", body)
+        println!("{:?}", resp)
     }
 
     Ok(())

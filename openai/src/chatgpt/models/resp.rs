@@ -89,6 +89,53 @@ pub struct GetConversationsResponse {
 pub struct GetConversationResonse {}
 
 #[derive(Serialize, Deserialize)]
+pub struct Author {
+  role: String,
+  name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateConversationContent {
+  content_type: String,
+  parts: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateConversationFinishDetails {
+  #[serde(rename = "type")]
+  _type: String,
+  stop: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateConversationMessage {
+  pub id: String,
+  pub author: Author,
+  pub create_time: f64,
+  pub update_time: String,
+  pub content: Content,
+  pub status: String,
+  pub end_turn: bool,
+  pub weight: i64,
+  pub metadata: CreateConversationMetadata,
+  pub recipient: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateConversationMetadata {
+  pub message_type: String,
+  pub model_slug: String,
+  pub finish_details: CreateConversationFinishDetails,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateConversationResponse {
+  pub message: Message,
+  pub conversation_id: String,
+  pub error: String,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct DeleteConversationResponse {
     pub success: bool,
 }
@@ -97,3 +144,4 @@ pub struct DeleteConversationResponse {
 pub struct RenameConversationResponse {
     pub success: bool,
 }
+

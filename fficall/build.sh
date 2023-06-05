@@ -8,6 +8,7 @@ echo "Start building the  platform static library"
 
 
 cd ffi
+go clean
 if [ "$GOOS" == "windows" ]; then
     LIB_NAME=$NAME.lib
 else 

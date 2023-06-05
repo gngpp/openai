@@ -23,7 +23,7 @@ rand = "0.8.5"
 jsonwebtokens = "1"
 async-trait = "0.1.68"
 derive_builder = "0.12.0"
-gohttp = { path = "../gohttp" }
+fficall = { path = "../fficall" }
 
 [lib]
 name = "openai"
