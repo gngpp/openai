@@ -315,7 +315,7 @@ impl ResponsePayload {
         600 > self.status && self.status >= 500
     }
 
-    pub async fn json<T: DeserializeOwned>(self) -> FiiCallResult<T> {
+    pub fn json<T: DeserializeOwned>(self) -> FiiCallResult<T> {
         let full = self.body.as_bytes();
         serde_json::from_slice(full).context(SerdeError::DeserializeError)
     }
