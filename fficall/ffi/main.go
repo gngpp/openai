@@ -240,8 +240,8 @@ func RequestStream(requestParams *C.char) *C.char {
 	return C.CString(string(jsonResponse))
 }
 
-//export NextStreamLine
-func NextStreamLine(id *C.char) *C.char {
+//export StreamLine
+func StreamLine(id *C.char) *C.char {
 	requestId := C.GoString(id)
 	next, ok := bodyMap.Get(requestId)
 	if ok {
@@ -256,6 +256,16 @@ func NextStreamLine(id *C.char) *C.char {
 		}
 	}
 	return C.CString("data: [DONE]")
+}
+
+//export StopStreamLine
+func StopStreamLine(id *C.char) {
+	requestId := C.GoString(id)
+	acs, ok := bodyMap.Get(requestId)
+	if ok {
+		_ = acs.Close()
+		bodyMap.Remove(requestId)
+	}
 }
 
 //export Request

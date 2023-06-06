@@ -227,7 +227,10 @@ extern "C" {
         -> *mut ::std::os::raw::c_char;
 }
 extern "C" {
-    pub fn NextStreamLine(id: *mut ::std::os::raw::c_char) -> *mut ::std::os::raw::c_char;
+    pub fn StreamLine(id: *mut ::std::os::raw::c_char) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn StopStreamLine(id: *mut ::std::os::raw::c_char);
 }
 extern "C" {
     pub fn Request(requestParams: *mut ::std::os::raw::c_char) -> *mut ::std::os::raw::c_char;

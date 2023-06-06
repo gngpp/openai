@@ -3,7 +3,7 @@ use derive_builder::Builder;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, ffi::CString};
 
-use crate::{ffi, FiiCallResult, SerdeError};
+use crate::{ffi, FiiCallResult, SerdeError, StreamLine};
 
 pub type HeaderMap = HashMap<String, Vec<String>>;
 pub type Cookie = HashMap<String, String>;
@@ -232,7 +232,46 @@ pub struct ReleaseSessionResponse {
     pub success: bool,
 }
 
-type StatusCode = u32;
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct StatusCode(u32);
+
+impl StatusCode {
+    /// Check if status is within 100-199.
+    #[inline]
+    pub fn is_informational(&self) -> bool {
+        200 > self.0 && self.0 >= 100
+    }
+
+    /// Check if status is within 0 (http client request error).
+    #[inline]
+    pub fn is_error(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Check if status is within 200-299.
+    #[inline]
+    pub fn is_success(&self) -> bool {
+        300 > self.0 && self.0 >= 200
+    }
+
+    /// Check if status is within 300-399.
+    #[inline]
+    pub fn is_redirection(&self) -> bool {
+        400 > self.0 && self.0 >= 300
+    }
+
+    /// Check if status is within 400-499.
+    #[inline]
+    pub fn is_client_error(&self) -> bool {
+        500 > self.0 && self.0 >= 400
+    }
+
+    /// Check if status is within 500-599.
+    #[inline]
+    pub fn is_server_error(&self) -> bool {
+        600 > self.0 && self.0 >= 500
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -252,6 +291,10 @@ pub struct ResponsePayload {
 impl ResponsePayload {
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.status
     }
 
     pub fn session_id(&self) -> Option<&str> {
@@ -279,64 +322,42 @@ impl ResponsePayload {
         &self.cookies
     }
 
-    /// Check if status is within 100-199.
-    #[inline]
-    pub fn is_informational(&self) -> bool {
-        200 > self.status && self.status >= 100
-    }
-
-    /// Check if status is within 0 (http client request error).
-    #[inline]
-    pub fn is_error(&self) -> bool {
-        self.status == 0
-    }
-
-    /// Check if status is within 200-299.
-    #[inline]
-    pub fn is_success(&self) -> bool {
-        300 > self.status && self.status >= 200
-    }
-
-    /// Check if status is within 300-399.
-    #[inline]
-    pub fn is_redirection(&self) -> bool {
-        400 > self.status && self.status >= 300
-    }
-
-    /// Check if status is within 400-499.
-    #[inline]
-    pub fn is_client_error(&self) -> bool {
-        500 > self.status && self.status >= 400
-    }
-
-    /// Check if status is within 500-599.
-    #[inline]
-    pub fn is_server_error(&self) -> bool {
-        600 > self.status && self.status >= 500
-    }
-
     pub fn json<T: DeserializeOwned>(self) -> FiiCallResult<T> {
         let full = self.body.as_bytes();
         serde_json::from_slice(full).context(SerdeError::DeserializeError)
     }
 
-    pub fn next<U: DeserializeOwned>(&self) -> FiiCallResult<Option<U>> {
-        let x = CString::new(self.id())?;
-        let body = unsafe { CString::from_raw(ffi::NextStreamLine(x.into_raw())) };
-        let s = String::from_utf8(body.to_bytes().to_vec())?;
-        if s.starts_with("data: [DONE]") {
+    pub fn text(self) -> FiiCallResult<String> {
+        Ok(self.body)
+    }
+}
+
+impl StreamLine for ResponsePayload {
+    fn next<T: DeserializeOwned>(self) -> FiiCallResult<Option<T>> {
+        let body_utf8 = unsafe {
+            let raw_id = CString::new(self.id())?.into_raw();
+            let body = CString::from_raw(ffi::StreamLine(raw_id));
+            // release
+            let _ = CString::from_raw(raw_id);
+            body.to_bytes().to_vec()
+        };
+        let body = String::from_utf8(body_utf8)?;
+        if body.starts_with("data: [DONE]") {
+            self.stop()?;
             return Ok(None);
         }
-        serde_json::from_str(s.as_str()).context(SerdeError::DeserializeError)
+        serde_json::from_str::<T>(body.as_str())
+            .context(SerdeError::DeserializeError)
+            .and_then(|res| Ok(Some(res)))
     }
 
-    pub fn text(&self) -> FiiCallResult<Option<String>> {
-        let x = CString::new(self.id())?;
-        let body = unsafe { CString::from_raw(ffi::NextStreamLine(x.into_raw())) };
-        let s = String::from_utf8(body.to_bytes().to_vec())?;
-        if s.starts_with("data: [DONE]") {
-            return Ok(None);
+    fn stop(self) -> FiiCallResult<()> {
+        unsafe {
+            let raw_id = CString::new(self.id)?.into_raw();
+            ffi::StopStreamLine(raw_id);
+            // release
+            let _ = CString::from_raw(raw_id);
         }
-        Ok(Some(s))
+        Ok(())
     }
 }
