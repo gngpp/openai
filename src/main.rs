@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-// use openai::api::Api;
+use openai::api::Api;
 use std::{io::Write, path::PathBuf, sync::Once};
 
 #[derive(Parser, Debug)]
@@ -53,34 +53,34 @@ use std::collections::HashMap;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _opt = Opt::parse();
-    // let email = std::env::var("EMAIL")?;
-    // let password = std::env::var("PASSWORD")?;
-    // let store = openai::token::FileStore::default();
-    // let mut auth = openai::oauth::OAuthBuilder::builder()
-    //     .email(email)
-    //     .password(password)
-    //     .cache(true)
-    //     .cookie_store(true)
-    //     .token_store(store)
-    //     .client_timeout(std::time::Duration::from_secs(20))
-    //     .build();
-    // let token = auth.do_get_access_token().await?;
-    // let mut headers = HashMap::new();
-    // headers.insert("User-Agent".to_string(),
-    //  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36".to_string());
-    // headers.insert(
-    //     "Authenorization".to_string(),
-    //     token.get_bearer_access_token().to_owned(),
-    // );
+    let email = std::env::var("EMAIL")?;
+    let password = std::env::var("PASSWORD")?;
+    let store = openai::token::FileStore::default();
+    let mut auth = openai::oauth::OAuthBuilder::builder()
+        .email(email)
+        .password(password)
+        .cache(true)
+        .cookie_store(true)
+        .token_store(store)
+        .client_timeout(std::time::Duration::from_secs(20))
+        .build();
+    let token = auth.do_get_access_token().await?;
+    let mut headers = HashMap::new();
+    headers.insert("User-Agent".to_string(),
+     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36".to_string());
+    headers.insert(
+        "Authenorization".to_string(),
+        token.get_bearer_access_token().to_owned(),
+    );
 
-    // let api = openai::api::opengpt::OpenGPTBuilder::builder()
-    //     .access_token(token.access_token().to_owned())
-    //     .cookie_store(false)
-    //     .build();
-    
-    // let resp = api.account_check().await?;
-    // println!("{:#?}", resp);
-    // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    let api = openai::api::opengpt::OpenGPTBuilder::builder()
+        .access_token(token.access_token().to_owned())
+        .cookie_store(false)
+        .build();
+
+    let resp = api.account_check().await?;
+    println!("{:#?}", resp);
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     Ok(())
 }
