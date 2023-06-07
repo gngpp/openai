@@ -26,7 +26,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=fficall");
 
     let bindings = bindgen::Builder::default()
-        .header("ffi/fficall.h")
+        .header("ffi/libfficall.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
         .expect("unable to generate hello bindings");
