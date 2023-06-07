@@ -1,4 +1,4 @@
-module tlscall
+module fficall
 
 go 1.20
 

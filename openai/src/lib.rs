@@ -1,4 +1,4 @@
-pub mod chatgpt;
+pub mod api;
 pub mod log;
 pub mod oauth;
 pub mod token;
@@ -11,7 +11,7 @@ pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 #[derive(thiserror::Error, Deserialize, Debug)]
 pub enum OAuthError {
-    #[error("fnvalid request (error {error:?}, error_description {error_description:?})")]
+    #[error("bad request (error {error:?}, error_description {error_description:?})")]
     BadRequest {
         error: String,
         error_description: String,
@@ -53,7 +53,7 @@ pub enum TokenStoreError {
     #[error("token not found error")]
     NotFoundError,
     #[error("failed token deserialize")]
-    DeserializeError,
+    DeserializeError(#[from] serde_json::error::Error),
     #[error("failed to verify access_token")]
     AccessTokenVerifyError,
     #[error("failed to create default token store file")]

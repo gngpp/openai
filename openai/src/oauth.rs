@@ -303,9 +303,7 @@ impl OAuth {
         callback_url: &str,
     ) -> OAuthResult<token::AuthenticateToken> {
         let url = Url::parse(callback_url)?;
-
         let code = Self::get_callback_code(&url)?;
-
         let data = json!({
             "redirect_uri": OPENAI_OAUTH_CALLBACK_URL.to_string(),
             "grant_type": "authorization_code".to_string(),

@@ -1,18 +1,18 @@
 #!/bin/sh
 
-set -e 
-NAME=libgohttp
-LIB_NAME=""
+# set -e 
+# NAME=libgohttp
+# LIB_NAME=""
 
-echo "Start building the  platform static library"
+# echo "Start building the  platform static library"
 
 
-cd ffi
-go clean
-if [ "$GOOS" == "windows" ]; then
-    LIB_NAME=$NAME.lib
-else 
-    LIB_NAME=$NAME.a
-fi
-GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=1 go build -ldflags "-s -w" -buildmode=c-archive -o $LIB_NAME
-cd -
+# cd ffi
+# go clean
+# if [ "$GOOS" == "windows" ]; then
+#     LIB_NAME=$NAME.lib
+# else 
+#     LIB_NAME=$NAME.a
+# fi
+# GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=1 go build -ldflags "-s -w" -buildmode=c-archive -o $LIB_NAME
+# cd -

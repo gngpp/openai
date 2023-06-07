@@ -4,22 +4,13 @@ pub mod model;
 use std::ffi::CString;
 
 use model::{RequestPayload, ResponsePayload};
-use serde::de::DeserializeOwned;
 
 pub type FiiCallResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
-pub trait StreamLine: Sync + Send {
-    fn next<T: DeserializeOwned>(self) -> FiiCallResult<Option<T>>;
+pub trait StreamLine<T: serde::de::DeserializeOwned> {
+    fn next(&self) -> FiiCallResult<Option<T>>;
 
     fn stop(self) -> FiiCallResult<()>;
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum SerdeError {
-    #[error("failed serialize")]
-    SerializeError,
-    #[error("failed deserialize")]
-    DeserializeError,
 }
 
 pub fn request(payload: RequestPayload) -> FiiCallResult<ResponsePayload> {
@@ -30,8 +21,7 @@ pub fn request(payload: RequestPayload) -> FiiCallResult<ResponsePayload> {
         // release memory
         let _ = CString::from_raw(raw_payload);
         let body = CString::from_raw(raw_body);
-        let body_utf8 = body.to_bytes().to_vec();
-        body_utf8
+        body.to_bytes().to_vec()
     };
 
     Ok(serde_json::from_slice::<model::ResponsePayload>(
@@ -47,8 +37,7 @@ pub fn request_stream(payload: RequestPayload) -> FiiCallResult<ResponsePayload>
         // release memory
         let _ = CString::from_raw(raw_payload);
         let body = CString::from_raw(raw_body);
-        let body_utf8 = body.to_bytes().to_vec();
-        body_utf8
+        body.to_bytes().to_vec()
     };
     Ok(serde_json::from_slice::<ResponsePayload>(&body_utf8)?)
 }

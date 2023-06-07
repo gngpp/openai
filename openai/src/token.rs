@@ -265,7 +265,7 @@ impl AuthenticateTokenStore for FileStore {
             return Ok(None);
         }
         let data: HashMap<String, AuthenticateToken> =
-            serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::DeserializeError)?;
+            serde_json::from_slice(&bytes).map_err(TokenStoreError::DeserializeError)?;
         Ok(data.get(email).cloned())
     }
 

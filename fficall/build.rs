@@ -22,11 +22,11 @@ fn main() {
     let workdir = env::current_dir().unwrap();
     let lib_path = PathBuf::from(workdir.join("ffi"));
 
-    println!("cargo:rustc-link-search={}", lib_path.display());
-    println!("cargo:rustc-link-lib=static=gohttp");
+    println!("cargo:rustc-link-search=native={}", lib_path.display());
+    println!("cargo:rustc-link-lib=static=fficall");
 
     let bindings = bindgen::Builder::default()
-        .header("ffi/libgohttp.h")
+        .header("ffi/fficall.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
         .expect("unable to generate hello bindings");

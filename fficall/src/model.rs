@@ -1,9 +1,8 @@
-use anyhow::Context;
 use derive_builder::Builder;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, ffi::CString};
 
-use crate::{ffi, FiiCallResult, SerdeError, StreamLine};
+use crate::{ffi, FiiCallResult};
 
 pub type HeaderMap = HashMap<String, Vec<String>>;
 pub type Cookie = HashMap<String, String>;
@@ -324,16 +323,16 @@ impl ResponsePayload {
 
     pub fn json<T: DeserializeOwned>(self) -> FiiCallResult<T> {
         let full = self.body.as_bytes();
-        serde_json::from_slice(full).context(SerdeError::DeserializeError)
+        Ok(serde_json::from_slice(full)?)
     }
 
+    /// Get text of this 'Response'
     pub fn text(self) -> FiiCallResult<String> {
         Ok(self.body)
     }
-}
 
-impl StreamLine for ResponsePayload {
-    fn next<T: DeserializeOwned>(self) -> FiiCallResult<Option<T>> {
+    /// Get next line stream body of this 'Response'
+    pub fn next(&self) -> FiiCallResult<Option<String>> {
         let body_utf8 = unsafe {
             let raw_id = CString::new(self.id())?.into_raw();
             let body = CString::from_raw(ffi::StreamLine(raw_id));
@@ -343,15 +342,13 @@ impl StreamLine for ResponsePayload {
         };
         let body = String::from_utf8(body_utf8)?;
         if body.starts_with("data: [DONE]") {
-            self.stop()?;
             return Ok(None);
         }
-        serde_json::from_str::<T>(body.as_str())
-            .context(SerdeError::DeserializeError)
-            .and_then(|res| Ok(Some(res)))
+        Ok(Some(body))
     }
 
-    fn stop(self) -> FiiCallResult<()> {
+    /// Stop reader stream body of this 'Response'
+    pub fn stop(self) -> FiiCallResult<()> {
         unsafe {
             let raw_id = CString::new(self.id)?.into_raw();
             ffi::StopStreamLine(raw_id);

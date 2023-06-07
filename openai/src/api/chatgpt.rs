@@ -1,34 +1,31 @@
-use std::{
-    ops::Add,
-    time::{Duration, SystemTime},
-};
+use std::time::Duration;
 
-use anyhow::Context;
 use async_trait::async_trait;
+use fficall::StreamLine;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Proxy, StatusCode,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 
 use crate::debug;
 
 use super::{
     models::{req, resp},
-    Api, ApiError, ApiResult, Method, ToConversationID,
+    Api, ApiError, ApiResult, Method,
 };
 
 const HEADER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36";
-const URL_CHAT_BASE: &str = "https://ai.fakeopen.com";
+const URL_CHATGPT_BASE: &str = "https://ai.fakeopen.com/api";
 
-pub struct ChatApi {
+pub struct ChatGPT {
+    bash_url: String,
     client: reqwest::Client,
     access_token: RwLock<String>,
-    expires: RwLock<Option<SystemTime>>,
 }
 
-impl ChatApi {
+impl ChatGPT {
     async fn request<U>(&self, url: String, method: Method) -> ApiResult<U>
     where
         U: DeserializeOwned,
@@ -56,7 +53,7 @@ impl ChatApi {
             Method::PATCH => self.client.patch(&url),
             Method::PUT => self.client.put(&url),
             Method::DELETE => self.client.delete(&url),
-            _ => anyhow::bail!("not supported method"),
+            _ => return Err(ApiError::FailedRequest("not supported method".to_owned())),
         }
         .bearer_auth(token)
         .json(payload);
@@ -70,10 +67,13 @@ impl ChatApi {
         let resp = builder.send().await?;
         let url = resp.url().clone();
         match resp.error_for_status_ref() {
-            Ok(_) => Ok(resp.json::<U>().await.context(ApiError::DeserializeError)?),
+            Ok(_) => Ok(resp
+                .json::<U>()
+                .await
+                .map_err(ApiError::ReqwestJsonDeserializeError)?),
             Err(err) => {
                 let err_msg = resp.text().await?;
-                println!("error: {}, url: {}", err_msg, url);
+                debug!("error: {}, url: {}", err_msg, url);
                 match err.status() {
                         Some(
                             status_code
@@ -89,121 +89,61 @@ impl ChatApi {
                             | StatusCode::GATEWAY_TIMEOUT),
                         ) => {
                             if status_code == StatusCode::UNAUTHORIZED {
-                                anyhow::bail!(ApiError::FailedAuthenticationError)
+                                return Err(ApiError::BadAuthenticationError(err_msg));
                             }
                             if status_code.is_client_error() {
-                                anyhow::bail!(ApiError::FailedRequest)
+                                return Err(ApiError::BadRequest(err_msg))
                             }
-                            anyhow::bail!(ApiError::ServerError)
+                            Err(ApiError::ServerError)
                         },
-                        _ => anyhow::bail!(err),
+                        _ => Err(ApiError::FailedRequest(err.to_string())),
                     }
             }
         }
-    }
-
-    async fn device_check(&self) -> ApiResult<()> {
-        use std::time::{Instant, UNIX_EPOCH};
-
-        let last_checked = self.expires.read().await;
-        let expired = if let Some(expired_time) = *last_checked {
-            let expired_time_timestamp = expired_time
-                .duration_since(UNIX_EPOCH)
-                .context(ApiError::SystemTimeExceptionError)?
-                .as_secs();
-
-            // Confirm half an hour in advance
-            let now_timestamp = Instant::now().elapsed().as_secs().add(3000);
-
-            expired_time_timestamp < now_timestamp
-        } else {
-            true
-        };
-        drop(last_checked);
-        if expired {
-            let payload = DeviceCheckPayloadBuilder::default().build()?;
-
-            let token = self.access_token.read().await;
-            let url = format!("{URL_CHAT_BASE}/api/devicecheck");
-            let resp = self
-                .client
-                .post(&url)
-                .bearer_auth(token)
-                .json(&payload)
-                .send()
-                .await?;
-            match resp.error_for_status_ref() {
-                Ok(resp) => {
-                    if let Some(cookie) = resp.cookies().find(|ele| ele.name().eq("_devicecheck")) {
-                        debug!("cookie value: {:?}", cookie.value());
-                        debug!("cookie expires: {:?}", cookie.expires());
-                        let mut expires = self.expires.write().await;
-                        *expires = cookie.expires();
-                    }
-                }
-                Err(err) => {
-                    let err_msg = resp.text().await?;
-                    debug!("error: {}, url: {}", err_msg, url);
-                    match err.status() {
-                        Some(
-                            status_code
-                            @
-                            // 4xx
-                            (StatusCode::UNAUTHORIZED
-                            | StatusCode::REQUEST_TIMEOUT
-                            | StatusCode::TOO_MANY_REQUESTS
-                            // 5xx
-                            | StatusCode::INTERNAL_SERVER_ERROR
-                            | StatusCode::BAD_GATEWAY
-                            | StatusCode::SERVICE_UNAVAILABLE
-                            | StatusCode::GATEWAY_TIMEOUT),
-                        ) => {
-                            if status_code == StatusCode::UNAUTHORIZED {
-                                anyhow::bail!(ApiError::FailedAuthenticationError)
-                            }
-                            if status_code.is_client_error() {
-                                anyhow::bail!(ApiError::FailedRequest)
-                            }
-                            anyhow::bail!(ApiError::ServerError)
-                        }
-                        _ => anyhow::bail!(err),
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 }
 
 #[async_trait]
-impl Api for ChatApi {
+impl Api for ChatGPT {
     async fn get_models(&self) -> ApiResult<resp::ModelsResponse> {
-        self.request(format!("{URL_CHAT_BASE}/api/models"), Method::GET)
+        self.request(format!("{URL_CHATGPT_BASE}/models"), Method::GET)
             .await
     }
 
     async fn account_check(&self) -> ApiResult<resp::AccountsCheckResponse> {
-        self.request(format!("{URL_CHAT_BASE}/api/accounts/check"), Method::GET)
+        self.request(format!("{URL_CHATGPT_BASE}/accounts/check"), Method::GET)
             .await
     }
 
     async fn get_conversation(
         &self,
-        conversation_id: &str,
+        req: req::GetConversationRequest,
     ) -> ApiResult<resp::GetConversationResonse> {
         self.request::<resp::GetConversationResonse>(
-            format!("{URL_CHAT_BASE}/api/conversation/{conversation_id}"),
+            format!("{URL_CHATGPT_BASE}/conversation/{}", req.conversation_id),
             Method::GET,
         )
         .await
     }
 
-    async fn get_conversations(&self) -> ApiResult<resp::GetConversationsResponse> {
-        todo!()
+    async fn get_conversations(
+        &self,
+        req: req::GetConversationRequest,
+    ) -> ApiResult<resp::GetConversationsResponse> {
+        self.request::<resp::GetConversationsResponse>(
+            format!(
+                "{URL_CHATGPT_BASE}/conversation?offset={}&limit={}",
+                req.offset, req.limit
+            ),
+            Method::GET,
+        )
+        .await
     }
 
-    async fn create_conversation(&self, _payload: req::CreateConversationRequest) -> ApiResult<()> {
-        self.device_check().await?;
+    async fn create_conversation(
+        &self,
+        _req: req::CreateConversationRequest,
+    ) -> ApiResult<Box<dyn StreamLine<resp::CreateConversationResponse>>> {
         // self.request_payload(
         //     format!("{}/api/conversation", URL_IOS_CHAT_BASE),
         //     Method::POST,
@@ -214,58 +154,77 @@ impl Api for ChatApi {
         todo!()
     }
 
-    async fn delete_conversation(
+    async fn clear_conversation(
         &self,
-        payload: req::DeleteConversationRequest,
-    ) -> ApiResult<resp::DeleteConversationResponse> {
+        req: req::ClearConversationRequest,
+    ) -> ApiResult<resp::ClearConversationResponse> {
         self.request_payload(
-            format!(
-                "{URL_CHAT_BASE}/api/conversation/{}",
-                payload.to_conversation_id()
-            ),
+            format!("{URL_CHATGPT_BASE}/conversation/{}", req.conversation_id),
             Method::PATCH,
-            &payload,
+            &req,
         )
         .await
     }
 
-    async fn delete_conversations(&self, payload: req::DeleteConversationRequest) -> ApiResult<()> {
+    async fn clear_conversations(
+        &self,
+        req: req::ClearConversationRequest,
+    ) -> ApiResult<resp::ClearConversationResponse> {
         self.request_payload(
-            format!("{URL_CHAT_BASE}/api/conversations"),
+            format!("{URL_CHATGPT_BASE}/conversations"),
             Method::PATCH,
-            &payload,
+            &req,
         )
         .await
     }
 
     async fn rename_conversation(
         &self,
-        payload: req::RenameConversationRequest,
+        req: req::RenameConversationRequest,
     ) -> ApiResult<resp::RenameConversationResponse> {
         self.request_payload(
             format!(
-                "{URL_CHAT_BASE}/api/conversation/{}",
-                payload.to_conversation_id()
+                "{URL_CHATGPT_BASE}/api/conversation/{}",
+                req.conversation_id
             ),
             Method::PATCH,
-            &payload,
+            &req,
+        )
+        .await
+    }
+
+    async fn message_feedback(
+        &self,
+        req: req::MessageFeedbackRequest,
+    ) -> ApiResult<resp::MessageFeedbackResponse> {
+        self.request_payload(
+            format!("{URL_CHATGPT_BASE}/api/conversation/message_feedbak"),
+            Method::POST,
+            &req,
         )
         .await
     }
 }
 
-impl super::RefreshToken for ChatApi {
+impl super::RefreshToken for ChatGPT {
     fn refresh_token(&mut self, access_token: String) {
         self.access_token = RwLock::new(access_token)
     }
 }
 
-pub struct IosChatApiBuilder {
+pub struct ChatGPTBuilder {
     builder: reqwest::ClientBuilder,
-    api: ChatApi,
+    api: ChatGPT,
 }
 
-impl<'a> IosChatApiBuilder {
+impl ChatGPTBuilder {
+    pub fn base_url(mut self, url: Option<String>) -> Self {
+        if let Some(url) = url {
+            self.api.bash_url = url
+        }
+        self
+    }
+
     pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
         if let Some(proxy) = proxy {
             self.builder = self.builder.proxy(proxy);
@@ -295,12 +254,12 @@ impl<'a> IosChatApiBuilder {
         self
     }
 
-    pub fn build(mut self) -> ChatApi {
+    pub fn build(mut self) -> ChatGPT {
         self.api.client = self.builder.build().expect("ClientBuilder::build()");
         self.api
     }
 
-    pub fn builder() -> IosChatApiBuilder {
+    pub fn builder() -> ChatGPTBuilder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(
             reqwest::header::USER_AGENT,
@@ -311,19 +270,13 @@ impl<'a> IosChatApiBuilder {
             .cookie_store(true)
             .default_headers(req_headers);
 
-        IosChatApiBuilder {
+        ChatGPTBuilder {
             builder: client,
-            api: ChatApi {
+            api: ChatGPT {
+                bash_url: String::from(URL_CHATGPT_BASE),
                 client: reqwest::Client::new(),
-                expires: RwLock::default(),
                 access_token: RwLock::default(),
             },
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, derive_builder::Builder)]
-struct DeviceCheckPayload {
-    device_token: String,
-    bundle_id: String,
 }
