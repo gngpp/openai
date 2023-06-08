@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use fficall::StreamLine;
-use reqwest::{
+use reqwest_impersonate::{
     header::{HeaderMap, HeaderValue},
     Proxy, StatusCode,
 };
@@ -21,7 +20,7 @@ const URL_CHATGPT_BASE: &str = "https://ai.fakeopen.com/api";
 
 pub struct ChatGPT {
     bash_url: String,
-    client: reqwest::Client,
+    client: reqwest_impersonate::Client,
     access_token: RwLock<String>,
 }
 
@@ -62,7 +61,7 @@ impl ChatGPT {
 
     async fn request_handle<U: DeserializeOwned>(
         &self,
-        builder: reqwest::RequestBuilder,
+        builder: reqwest_impersonate::RequestBuilder,
     ) -> ApiResult<U> {
         let resp = builder.send().await?;
         let url = resp.url().clone();
@@ -143,7 +142,7 @@ impl Api for ChatGPT {
     async fn create_conversation(
         &self,
         _req: req::CreateConversationRequest,
-    ) -> ApiResult<Box<dyn StreamLine<resp::CreateConversationResponse>>> {
+    ) -> ApiResult<resp::CreateConversationResponse> {
         // self.request_payload(
         //     format!("{}/api/conversation", URL_IOS_CHAT_BASE),
         //     Method::POST,
@@ -213,7 +212,7 @@ impl super::RefreshToken for ChatGPT {
 }
 
 pub struct ChatGPTBuilder {
-    builder: reqwest::ClientBuilder,
+    builder: reqwest_impersonate::ClientBuilder,
     api: ChatGPT,
 }
 
@@ -262,11 +261,11 @@ impl ChatGPTBuilder {
     pub fn builder() -> ChatGPTBuilder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(
-            reqwest::header::USER_AGENT,
+            reqwest_impersonate::header::USER_AGENT,
             HeaderValue::from_static(HEADER_UA),
         );
 
-        let client = reqwest::ClientBuilder::new()
+        let client = reqwest_impersonate::ClientBuilder::new()
             .cookie_store(true)
             .default_headers(req_headers);
 
@@ -274,7 +273,7 @@ impl ChatGPTBuilder {
             builder: client,
             api: ChatGPT {
                 bash_url: String::from(URL_CHATGPT_BASE),
-                client: reqwest::Client::new(),
+                client: reqwest_impersonate::Client::new(),
                 access_token: RwLock::default(),
             },
         }

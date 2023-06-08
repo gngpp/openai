@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 // use std::task::{Context, Poll};
 
 // use futures_util::stream::Stream;
-// use reqwest::{Client, Response};
+// use reqwest_impersonate::{Client, Response};
 // use serde_json::Value;
 
 // use serde::{Deserialize, Serialize};
@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
 // }
 
 // pub struct GptStream {
-//     response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
+//     response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest_impersonate::Error>> + Send>>,
 //     buffer: String,
 //     first_chunk: bool,
 // }

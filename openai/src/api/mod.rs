@@ -4,7 +4,6 @@ pub mod opengpt;
 pub mod service;
 
 use async_trait::async_trait;
-use fficall::StreamLine;
 
 use self::models::{req, resp};
 
@@ -27,7 +26,7 @@ pub enum ApiError {
     #[error(transparent)]
     SerdeDeserializeError(#[from] serde_json::error::Error),
     #[error(transparent)]
-    ReqwestJsonDeserializeError(#[from] reqwest::Error),
+    ReqwestJsonDeserializeError(#[from] reqwest_impersonate::Error),
     #[error(transparent)]
     AnyhowJsonDeserializeError(#[from] anyhow::Error),
     #[error("failed serialize `{0}`")]
@@ -65,7 +64,7 @@ pub trait Api: Sync + Send {
     async fn create_conversation(
         &self,
         req: req::CreateConversationRequest,
-    ) -> ApiResult<Box<dyn StreamLine<resp::CreateConversationResponse>>>;
+    ) -> ApiResult<resp::CreateConversationResponse>;
 
     async fn clear_conversation(
         &self,
@@ -93,19 +92,3 @@ trait RefreshToken: Sync + Send {
     fn refresh_token(&mut self, access_token: String);
 }
 
-pub struct StreamResponseWrapper(fficall::model::ResponsePayload);
-
-impl<T: serde::de::DeserializeOwned> StreamLine<T> for StreamResponseWrapper {
-    fn next(&self) -> fficall::FiiCallResult<Option<T>> {
-        if let Some(body) = self.0.next()? {
-            return Ok(Some(
-                serde_json::from_str::<T>(&body).map_err(ApiError::SerdeDeserializeError)?,
-            ));
-        }
-        Ok(None)
-    }
-
-    fn stop(self) -> fficall::FiiCallResult<()> {
-        self.0.stop()
-    }
-}

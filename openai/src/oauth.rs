@@ -6,14 +6,14 @@ use std::time::Duration;
 
 use async_recursion::async_recursion;
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::redirect::Policy;
+use reqwest_impersonate::header::{HeaderMap, HeaderValue};
+use reqwest_impersonate::redirect::Policy;
 use serde::Deserialize;
 use serde_json::json;
 
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
-use reqwest::{Client, Proxy, Url};
+use reqwest_impersonate::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
 
 use crate::{token, OAuthError, OAuthResult};
@@ -113,7 +113,7 @@ impl OAuth {
 
         let mut headers = self.req_headers.clone();
         headers.insert(
-            reqwest::header::REFERER,
+            reqwest_impersonate::header::REFERER,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
         let resp = self.session.get(url).headers(headers).send().await?;
@@ -136,9 +136,9 @@ impl OAuth {
             state
         );
         let mut headers = self.req_headers.clone();
-        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
+        headers.insert(reqwest_impersonate::header::REFERER, HeaderValue::from_str(&url)?);
         headers.insert(
-            reqwest::header::ORIGIN,
+            reqwest_impersonate::header::ORIGIN,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
         let data = json!({
@@ -180,7 +180,7 @@ impl OAuth {
     ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
-        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(referrer)?);
+        headers.insert(reqwest_impersonate::header::REFERER, HeaderValue::from_str(referrer)?);
         let data = json!({
             "state": state,
             "username": self.email.to_string(),
@@ -222,7 +222,7 @@ impl OAuth {
         let url = format!("{}{}", OPENAI_OAUTH_URL, location);
         let mut headers = self.req_headers.clone();
         headers.insert(
-            reqwest::header::REFERER,
+            reqwest_impersonate::header::REFERER,
             HeaderValue::from_str(referrer).unwrap(),
         );
         let resp = self.session.get(&url).headers(headers).send().await?;
@@ -262,12 +262,12 @@ impl OAuth {
         });
 
         let mut headers = self.req_headers.clone();
-        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
+        headers.insert(reqwest_impersonate::header::REFERER, HeaderValue::from_str(&url)?);
         headers.insert(
-            reqwest::header::ORIGIN,
+            reqwest_impersonate::header::ORIGIN,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
-        headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
+        headers.insert(reqwest_impersonate::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let resp = self
             .session
@@ -414,7 +414,7 @@ pub struct RefreshToken {
 }
 
 pub struct OAuthBuilder {
-    builder: reqwest::ClientBuilder,
+    builder: reqwest_impersonate::ClientBuilder,
     oauth: OAuth,
 }
 
@@ -475,7 +475,7 @@ impl OAuthBuilder {
 
     pub fn builder() -> OAuthBuilder {
         let mut req_headers = HeaderMap::new();
-        req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
+        req_headers.insert(reqwest_impersonate::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
             if attempt

@@ -23,6 +23,11 @@ url = "2.3.1"
 openai = { path = "openai" }
 rustls = "0.21.1"
 
+[patch.crates-io]
+hyper = { git = "https://github.com/4JX/hyper.git", branch = "v0.14.18-patched" }
+h2 = { git = "https://github.com/4JX/h2.git", branch = "imp" }
+
+
 [[bin]]
 name = "opengpt"
 path = "src/main.rs"
