@@ -22,7 +22,6 @@ serde = {version = "1.0", features = ["derive"] }
 url = "2.3.1"
 openai = { path = "openai" }
 rustls = "0.21.1"
-fficall = { path = "fficall" }
 
 [[bin]]
 name = "opengpt"
