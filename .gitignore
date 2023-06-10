@@ -19,3 +19,5 @@ Cargo.lock
 /target
 
 .opengpt-access_tokens
+.vscode
+l

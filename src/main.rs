@@ -2,6 +2,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::{io::Write, path::PathBuf, sync::Once};
 
+pub mod util;
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, arg_required_else_help = true)]
 struct Opt {
@@ -11,7 +13,7 @@ struct Opt {
 
     /// HTTP Proxy. Format: protocol://user:pass@ip:port
     #[clap(short, long, env = "OPENGPT_PROXY", value_parser = parse_proxy_url)]
-    proxy: Option<reqwest::Proxy>,
+    proxy: Option<url::Url>,
 
     /// OpenAI gpt-3.5-turbo chat api, Note: OpenAI will bill you
     #[clap(short, long, env = "OPENGPT_TURBO")]
@@ -103,15 +105,13 @@ fn parse_host(s: &str) -> anyhow::Result<std::net::IpAddr> {
     Ok(addr)
 }
 
-fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<reqwest::Proxy> {
+// proxy proto
+fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<url::Url> {
     let url = url::Url::parse(proxy_url)
         .context("The Proxy Url format must be `protocol://user:pass@ip:port`")?;
     let protocol = url.scheme().to_string();
     match protocol.as_str() {
-        "http" => "80".to_string(),
-        "https" => "443".to_string(),
+        "http" | "https" | "sockt5" => Ok(url),
         _ => anyhow::bail!("Unsupported protocol: {}", protocol),
-    };
-
-    Ok(reqwest::Proxy::all(url.to_string())?)
+    }
 }
