@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::api::Success;
+
+use super::Author;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AccountPlan {
     pub is_paid_subscription_active: bool,
@@ -13,10 +17,16 @@ pub struct AccountPlan {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AccountsCheckResponse {
+pub struct GetAccountsCheckResponse {
     pub account_plan: AccountPlan,
     pub user_country: String,
     pub features: Vec<String>,
+}
+
+impl Success for GetAccountsCheckResponse {
+    fn ok(&self) -> bool {
+        !self.user_country.is_empty()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -39,8 +49,22 @@ pub struct Models {
     pub tags: Vec<String>,
 }
 
+impl Models {
+    pub fn model_name(&self) -> &str {
+        self.slug.as_ref()
+    }
+
+    pub fn description(&self) -> &str {
+        self.description.as_ref()
+    }
+
+    pub fn max_tokens(&self) -> i64 {
+        self.max_tokens
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ModelsResponse {
+pub struct GetModelsResponse {
     pub models: Vec<Models>,
     pub categories: Vec<ModelsCategories>,
 }
@@ -55,12 +79,13 @@ pub struct Mapping {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
-    id: String,
-    author: Author,
-    create_time: f64,
-    status: String,
-    content: Content,
-    metadata: Metadata,
+    pub id: String,
+    pub author: Author,
+    pub create_time: f64,
+    pub update_time: Option<f64>,
+    pub status: String,
+    pub content: Content,
+    pub metadata: Metadata,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -71,6 +96,7 @@ pub struct Content {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Metadata {
+    message_type: Option<String>,
     model_slug: Option<String>,
     #[serde(rename = "timestamp_")]
     timestamp: Option<String>,
@@ -80,8 +106,8 @@ pub struct Metadata {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FinishDetails {
     #[serde(rename = "type")]
-    _type: Option<String>,
-    stop: Option<String>,
+    pub _type: Option<String>,
+    pub stop: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -113,25 +139,13 @@ pub struct GetConversationResonse {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Author {
-    role: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CreateConversationContent {
-    content_type: String,
-    parts: Vec<String>,
+pub struct PostConversationContent {
+    pub content_type: String,
+    pub parts: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateConversationFinishDetails {
-    #[serde(rename = "type")]
-    _type: String,
-    stop: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CreateConversationMessage {
+pub struct PostConversationMessage {
     pub id: String,
     pub author: Author,
     pub create_time: f64,
@@ -140,34 +154,56 @@ pub struct CreateConversationMessage {
     pub status: String,
     pub end_turn: bool,
     pub weight: i64,
-    pub metadata: CreateConversationMetadata,
+    pub metadata: PostConversationMetadata,
     pub recipient: String,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CreateConversationMetadata {
+pub struct PostConversationMetadata {
     pub message_type: String,
     pub model_slug: String,
-    pub finish_details: CreateConversationFinishDetails,
+    pub finish_details: FinishDetails,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct CreateConversationResponse {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PostConversationResponse {
     pub message: Message,
     pub conversation_id: String,
-    pub error: String,
+    pub error: Option<String>,
+}
+
+impl PostConversationResponse {
+    pub fn create_time(&self) -> i64 {
+        self.message.create_time as i64
+    }
+
+    pub fn author(&self) -> String {
+        self.message.author.role.to_string()
+    }
+
+    pub fn message_type(&self) -> &str {
+        self.message.content.content_type.as_ref()
+    }
+
+    pub fn message(self) -> Vec<String> {
+        self.message.content.parts
+    }
+
+    pub fn conversation_id(&self) -> &str {
+        self.conversation_id.as_ref()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ClearConversationResponse {
+pub struct PatchConversationResponse {
     #[serde(default)]
     pub success: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RenameConversationResponse {
-    #[serde(default)]
-    pub success: bool,
+impl Success for PatchConversationResponse {
+    fn ok(&self) -> bool {
+        self.success
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -177,8 +213,6 @@ pub struct MessageFeedbackResponse {
     pub user_id: String,
     pub rating: String,
     pub create_time: String,
-    //pub  workspace_id: Option<String>,
-    //pub  content: String,
     pub embedded_conversation: String,
     pub storage_protocol: String,
 }

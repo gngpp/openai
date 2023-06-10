@@ -1,4 +1,6 @@
-use openai::api::{models::req, Api};
+use futures_util::StreamExt;
+use openai::api::models::req::{self, PostConversationRequest};
+use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,52 +21,82 @@ async fn main() -> anyhow::Result<()> {
         .cookie_store(false)
         .build();
 
-    let resp = api.account_check().await?;
+    // check account status
+    let resp = api.get_account_check().await?;
     println!("{:#?}", resp);
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
+    // get models
     let resp = api.get_models().await?;
-    println!("{:#?}", resp);
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    let req = req::GetConversationRequestBuilder::default()
-        .conversation_id("78feb7c4-a864-4606-8665-cdb7a1cf4f6d".to_owned())
+    let req = req::PostNextConversationBodyBuilder::default()
+        .model(resp.models[0].slug.to_string())
+        .prompt("Java Example".to_string())
         .build()?;
-    let resp = api.get_conversation(req).await?;
-    println!("{:#?}", resp);
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    let req = req::GetConversationRequestBuilder::default()
-        .offset(0)
-        .limit(20)
-        .build()?;
-    let resp = api.get_conversations(req).await?;
-    println!("{:#?}", resp);
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+    let mut resp: openai::api::PostConversationStreamResponse = api
+        .post_conversation_stream(PostConversationRequest::Next(req))
+        .await?;
 
-    // let req = req::DeleteConversationRequestBuilder::default()
+    let mut previous_response = String::new();
+    let mut out: tokio::io::Stdout = tokio::io::stdout();
+
+    while let Some(ele) = resp.next().await {
+        let message = &ele.message()[0];
+        if message.starts_with(&previous_response) {
+            let new_chars: String = message.chars().skip(previous_response.len()).collect();
+            out.write_all(new_chars.as_bytes()).await?;
+        } else {
+            out.write_all(message.as_bytes()).await?;
+        }
+        out.flush().await?;
+        previous_response = message.to_string();
+    }
+
+    // get conversation
+    // let req = req::GetConversationRequestBuilder::default()
+    //     .conversation_id("78feb7c4-a864-4606-8665-cdb7a1cf4f6d".to_owned())
+    //     .build()?;
+    // let resp = api.get_conversation(req).await?;
+    // println!("{:#?}", resp);
+    // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // get conversation list
+    // let req = req::GetConversationRequestBuilder::default()
+    //     .offset(0)
+    //     .limit(20)
+    //     .build()?;
+    // let resp = api.get_conversations(req).await?;
+    // println!("{:#?}", resp);
+    // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // // clart conversation
+    // let req = req::PatchConversationRequestBuilder::default()
     //     .conversation_id("3de1bd20-ecea-4bf7-96f5-b8eb681b180d".to_owned())
     //     .is_visible(false)
     //     .build()?;
-    // let resp = api.delete_conversation(req).await?;
+    // let resp = api.patch_conversation(req).await?;
     // println!("{:#?}", resp);
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    // let req = req::DeleteConversationRequestBuilder::default()
+    // // clart conversation list
+    // let req = req::PatchConversationRequestBuilder::default()
     //     .is_visible(false)
     //     .build()?;
-    // let resp = api.delete_conversations(req).await?;
+    // let resp = api.patch_conversations(req).await?;
     // println!("{:#?}", resp);
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-    // let req = req::RenameConversationRequestBuilder::default()
+    // rename conversation title
+    // let req = req::PatchConversationRequestBuilder::default()
     //     .conversation_id("78feb7c4-a864-4606-8665-cdb7a1cf4f6d".to_owned())
     //     .title("fuck".to_owned())
     //     .build()?;
-    // let resp = api.rename_conversation(req).await?;
+    // let resp = api.patch_conversation(req).await?;
     // println!("{:#?}", resp);
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
+    // // message feedback
     // let req = req::MessageFeedbackRequestBuilder::default()
     //     .message_id("463a23c4-0855-4c5b-976c-7697519335ad".to_owned())
     //     .conversation_id("78feb7c4-a864-4606-8665-cdb7a1cf4f6d".to_owned())

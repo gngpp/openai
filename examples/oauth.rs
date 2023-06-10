@@ -17,7 +17,5 @@ async fn main() -> anyhow::Result<()> {
     println!("Profile: {:#?}", token.profile());
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     auth.do_refresh_token().await?;
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    auth.do_revoke_token().await?;
     Ok(())
 }
