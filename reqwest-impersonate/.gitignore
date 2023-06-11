@@ -1,0 +1,7 @@
+target
+# Cargo.lock
+*.swp
+.history
+.vscode
+.direnv
+result

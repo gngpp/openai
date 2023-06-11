@@ -11,15 +11,11 @@ struct Opt {
     #[clap(long, global = true, env = "OPENGPT_DEBUG", value_parser = initialize_log)]
     debug: bool,
 
-    /// HTTP Proxy. Format: protocol://user:pass@ip:port
-    #[clap(short, long, env = "OPENGPT_PROXY", value_parser = parse_proxy_url)]
-    proxy: Option<url::Url>,
-
     /// OpenAI gpt-3.5-turbo chat api, Note: OpenAI will bill you
     #[clap(short, long, env = "OPENGPT_TURBO")]
     turbo: bool,
 
-    /// OpenAI account email, Format: gngppz@gmail.com
+    /// OpenAI account email, Format: example@gmail.com
     #[arg(short = 'E', long, env = "OPENGPT_EMAIL", requires = "password")]
     email: Option<String>,
 
@@ -27,26 +23,33 @@ struct Opt {
     #[arg(short = 'W', long, env = "OPENGPT_PASSWORD", requires = "email")]
     password: Option<String>,
 
+    /// Server Listen host
+    #[clap(short = 'H', long, default_value = "0.0.0.0", value_parser = parse_host, requires = "port")]
+    host: Option<std::net::IpAddr>,
+
+    /// Server Listen port
+    #[clap(short = 'P', long, default_value = "7999", value_parser = parse_port_in_range, requires = "host")]
+    port: Option<u16>,
+
     #[clap(subcommand)]
     command: Option<SubCommands>,
 }
 
 #[derive(Subcommand, Debug)]
 enum SubCommands {
-    /// Start proxy server
-    Server {
-        /// Server Listen host
-        #[clap(short = 'H', long, default_value = "0.0.0.0", value_parser = parse_host)]
-        host: std::net::IpAddr,
-        /// Server Listen port
-        #[clap(short = 'P', long, default_value = "7999", value_parser = parse_port_in_range)]
-        port: u16,
-    },
     /// Setting configuration
     Config {
         /// Working directory, refresh_token will be stored in there if specified
-        #[clap(short = 'W', long)]
+        #[clap(short, long, env = "OPENGPT_WORKDIR")]
         workdir: Option<PathBuf>,
+
+        /// Unofficial API prefix, Format: https://example.com/backend-api
+        #[clap(short, long, env = "OPENGPT_API")]
+        unofficial_api: Option<String>,
+
+        /// HTTP Proxy. Format: protocol://user:pass@ip:port
+        #[clap(short, long, env = "OPENGPT_PROXY", value_parser = parse_proxy_url)]
+        proxy: Option<url::Url>,
     },
 }
 
