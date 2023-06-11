@@ -161,10 +161,9 @@ impl OpenGPT {
             .send()
             .await?;
 
-        Ok(PostConversationStreamResponse {
-            response: Box::pin(resp.bytes_stream()),
-            first_chunk: true,
-        })
+        Ok(PostConversationStreamResponse::new(Box::pin(
+            resp.bytes_stream(),
+        )))
     }
 
     pub async fn post_conversation(

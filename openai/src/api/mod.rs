@@ -68,6 +68,19 @@ pub struct PostConversationStreamResponse {
     first_chunk: bool,
 }
 
+impl PostConversationStreamResponse {
+    pub fn new(
+        response: Pin<
+            Box<dyn Stream<Item = Result<bytes::Bytes, reqwest_impersonate::Error>> + Send>,
+        >,
+    ) -> Self {
+        Self {
+            response,
+            first_chunk: true,
+        }
+    }
+}
+
 impl Stream for PostConversationStreamResponse {
     type Item = PostConversationResponse;
 
