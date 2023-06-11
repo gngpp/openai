@@ -24,15 +24,12 @@ openai = { path = "openai" }
 futures-util = "0.3.28"
 
 [patch.crates-io]
-hyper = { git = "https://github.com/4JX/hyper.git", branch = "v0.14.18-patched" }
-h2 = { git = "https://github.com/4JX/h2.git", branch = "imp" }
+hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched" }
+h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp" }
 
 [[bin]]
 name = "opengpt"
 path = "src/main.rs"
-
-[profile.dev]
-opt-level = 'z'
 
 [profile.release]
 lto = true

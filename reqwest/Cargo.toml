@@ -146,10 +146,10 @@ rustls-native-certs = { version = "0.6", optional = true }
 rustls-pemfile = { version = "1.0", optional = true }
 
 ## boring-tls
-hyper-boring = { git = "https://github.com/4JX/boring", rev = "2a7463a", optional = true }
-boring = { git = "https://github.com/4JX/boring", rev = "2a7463a", optional = true }
-tokio-boring = { git = "https://github.com/4JX/boring", rev = "2a7463a", optional = true }
-boring-sys = { git = "https://github.com/4JX/boring", rev = "2a7463a", optional = true }
+hyper-boring = { git = "https://github.com/gngpp/boring", rev = "2a7463a", optional = true }
+boring = { git = "https://github.com/gngpp/boring", rev = "2a7463a", optional = true }
+tokio-boring = { git = "https://github.com/gngpp/boring", rev = "2a7463a", optional = true }
+boring-sys = { git = "https://github.com/gngpp/boring", rev = "2a7463a", optional = true }
 foreign-types = { version = "0.5.0", optional = true }
 
 ## cookies
@@ -282,5 +282,5 @@ path = "tests/multipart.rs"
 required-features = ["multipart"]
 
 [patch.crates-io]
-h2 = { git = "https://github.com/4JX/h2.git", branch = "imp" }
-hyper = { git = "https://github.com/4JX/hyper.git", branch = "v0.14.18-patched" }
+h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp" }
+hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched" }
