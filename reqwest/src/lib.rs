@@ -291,7 +291,6 @@ fn _assert_impls() {
     assert_sync::<Error>();
 }
 
-
 if_hyper! {
 
     #[cfg(test)]
