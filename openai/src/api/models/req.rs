@@ -57,19 +57,19 @@ impl TryFrom<PostConversationRequest> for PostConversationBody {
 }
 
 #[derive(Serialize, Builder)]
-pub struct PatchConversationRequest {
-    #[builder(default = "String::new()")]
-    pub conversation_id: String,
+pub struct PatchConversationRequest<'a> {
     #[builder(setter(into, strip_option), default)]
-    title: Option<String>,
+    pub conversation_id: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    title: Option<&'a str>,
     #[builder(setter(into, strip_option), default)]
     is_visible: Option<bool>,
 }
 
 #[derive(Builder)]
-pub struct GetConversationRequest {
-    #[builder(default = "String::new()")]
-    pub conversation_id: String,
+pub struct GetConversationRequest<'a> {
+    #[builder(setter(into, strip_option))]
+    pub conversation_id: Option<&'a str>,
     #[builder(default = "0")]
     pub offset: u32,
     #[builder(default = "20")]
@@ -77,10 +77,17 @@ pub struct GetConversationRequest {
 }
 
 #[derive(Serialize, Builder)]
-pub struct MessageFeedbackRequest {
-    message_id: String,
+pub struct PostConversationGenTitleRequest<'a> {
+    message_id: &'a str,
+    #[serde(skip_serializing)]
+    pub conversation_id: &'a str,
+}
+
+#[derive(Serialize, Builder)]
+pub struct MessageFeedbackRequest<'a> {
+    message_id: &'a str,
     rating: Rating,
-    conversation_id: String,
+    conversation_id: &'a str,
 }
 
 #[derive(Serialize, Clone)]

@@ -10,7 +10,7 @@ log = "0.4.18"
 anyhow = "1.0.71"
 thiserror = "1.0"
 chrono = "0.4.22"
-reqwest-impersonate = { path = "../reqwest", default-features = false, features = [
+reqwest = { path = "../reqwest", default-features = false, features = [
     "chrome","json", "cookies", "stream"
 ] }
 tokio = { version = "1.23.1", features = ["fs", "sync"] }
@@ -27,6 +27,8 @@ async-trait = "0.1.68"
 derive_builder = "0.12.0"
 futures-util = "0.3.28"
 bytes = { version = "1.4.0", default-features = false }
+actix-web = { version = "4", features = ["openssl"] }
+openssl = { version = "0.10.54" }
 
 [dependencies.uuid]
 version = "1.3.3"

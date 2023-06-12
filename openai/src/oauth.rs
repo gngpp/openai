@@ -7,14 +7,14 @@ use std::time::Duration;
 use async_recursion::async_recursion;
 use derive_builder::Builder;
 use regex::Regex;
-use reqwest_impersonate::header::{HeaderMap, HeaderValue};
-use reqwest_impersonate::redirect::Policy;
+use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::redirect::Policy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
-use reqwest_impersonate::{Client, Proxy, Url};
+use reqwest::{Client, Proxy, Url};
 use sha2::{Digest, Sha256};
 
 use crate::{token, OAuthError, OAuthResult};
@@ -126,7 +126,7 @@ impl OAuth {
 
         let mut headers = self.default_headers.clone();
         headers.insert(
-            reqwest_impersonate::header::REFERER,
+            reqwest::header::REFERER,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
         let resp = self.session.get(url).headers(headers).send().await?;
@@ -146,12 +146,9 @@ impl OAuth {
     ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{OPENAI_OAUTH_URL}/u/login/identifier?state={}", state);
         let mut headers = self.default_headers.clone();
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
         headers.insert(
-            reqwest_impersonate::header::REFERER,
-            HeaderValue::from_str(&url)?,
-        );
-        headers.insert(
-            reqwest_impersonate::header::ORIGIN,
+            reqwest::header::ORIGIN,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
 
@@ -191,10 +188,7 @@ impl OAuth {
     ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{OPENAI_OAUTH_URL}{}", location);
         let mut headers = self.default_headers.clone();
-        headers.insert(
-            reqwest_impersonate::header::REFERER,
-            HeaderValue::from_str(referrer)?,
-        );
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(referrer)?);
 
         let data = AuthenticateDataBuilder::default()
             .action("default")
@@ -233,10 +227,7 @@ impl OAuth {
     ) -> OAuthResult<token::AuthenticateToken> {
         let url = format!("{OPENAI_OAUTH_URL}{}", location);
         let mut headers = self.default_headers.clone();
-        headers.insert(
-            reqwest_impersonate::header::REFERER,
-            HeaderValue::from_str(referrer)?,
-        );
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(referrer)?);
         let resp = self.session.get(&url).headers(headers).send().await?;
 
         if resp.status().is_redirection() {
@@ -270,18 +261,12 @@ impl OAuth {
             .code(mfa_code)
             .build()?;
         let mut headers = self.default_headers.clone();
+        headers.insert(reqwest::header::REFERER, HeaderValue::from_str(&url)?);
         headers.insert(
-            reqwest_impersonate::header::REFERER,
-            HeaderValue::from_str(&url)?,
-        );
-        headers.insert(
-            reqwest_impersonate::header::ORIGIN,
+            reqwest::header::ORIGIN,
             HeaderValue::from_static(OPENAI_OAUTH_URL),
         );
-        headers.insert(
-            reqwest_impersonate::header::USER_AGENT,
-            HeaderValue::from_static(UA),
-        );
+        headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let resp = self
             .session
@@ -464,7 +449,7 @@ pub struct RefreshToken {
 }
 
 pub struct OAuthBuilder {
-    builder: reqwest_impersonate::ClientBuilder,
+    builder: reqwest::ClientBuilder,
     oauth: OAuth,
 }
 
@@ -528,10 +513,7 @@ impl OAuthBuilder {
 
     pub fn builder() -> OAuthBuilder {
         let mut req_headers = HeaderMap::new();
-        req_headers.insert(
-            reqwest_impersonate::header::USER_AGENT,
-            HeaderValue::from_static(UA),
-        );
+        req_headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static(UA));
 
         let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
             if attempt

@@ -4,7 +4,7 @@ use crate::{OAuthError, TokenResult, TokenStoreError};
 use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
-use reqwest_impersonate::header;
+use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -295,7 +295,7 @@ struct KeyResult {
 }
 
 async fn keys() -> TokenResult<KeyResult> {
-    use reqwest_impersonate::Client;
+    use reqwest::Client;
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()?;

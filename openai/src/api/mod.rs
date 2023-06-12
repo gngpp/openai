@@ -10,7 +10,6 @@ use self::models::resp::PostConversationResponse;
 pub mod chatgpt;
 pub mod models;
 pub mod opengpt;
-pub mod service;
 
 pub type ApiResult<T, E = ApiError> = anyhow::Result<T, E>;
 
@@ -31,7 +30,7 @@ pub enum ApiError {
     #[error(transparent)]
     SerdeDeserializeError(#[from] serde_json::error::Error),
     #[error(transparent)]
-    ReqwestJsonDeserializeError(#[from] reqwest_impersonate::Error),
+    ReqwestJsonDeserializeError(#[from] reqwest::Error),
     #[error(transparent)]
     AnyhowJsonDeserializeError(#[from] anyhow::Error),
     #[error("failed serialize `{0}`")]
@@ -52,6 +51,8 @@ pub enum ApiError {
     FormatPrefixStringError,
     #[error(transparent)]
     FromUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("required parameter `{0}`")]
+    RequiredParameter(String),
 }
 
 pub trait RefreshToken: Sync + Send {
@@ -64,15 +65,13 @@ pub trait Success {
 }
 
 pub struct PostConversationStreamResponse {
-    response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest_impersonate::Error>> + Send>>,
+    response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
     first_chunk: bool,
 }
 
 impl PostConversationStreamResponse {
     pub fn new(
-        response: Pin<
-            Box<dyn Stream<Item = Result<bytes::Bytes, reqwest_impersonate::Error>> + Send>,
-        >,
+        response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
     ) -> Self {
         Self {
             response,

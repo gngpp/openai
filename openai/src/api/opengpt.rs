@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use reqwest_impersonate::{
+use reqwest::{
     browser,
     header::{HeaderMap, HeaderValue},
     Proxy, StatusCode,
@@ -21,7 +21,7 @@ const URL_CHATGPT_BASE: &str = "https://chat.openai.com/backend-api";
 
 pub struct OpenGPT {
     api_prefix: String,
-    client: reqwest_impersonate::Client,
+    client: reqwest::Client,
     access_token: RwLock<String>,
 }
 
@@ -67,7 +67,7 @@ impl OpenGPT {
 
     async fn request_handle<U: DeserializeOwned>(
         &self,
-        builder: reqwest_impersonate::RequestBuilder,
+        builder: reqwest::RequestBuilder,
     ) -> ApiResult<U> {
         let resp = builder.send().await?;
         let url = resp.url().clone();
@@ -122,24 +122,29 @@ impl OpenGPT {
         .await
     }
 
-    pub async fn get_conversation(
+    pub async fn get_conversation<'a>(
         &self,
-        req: req::GetConversationRequest,
+        req: req::GetConversationRequest<'a>,
     ) -> ApiResult<resp::GetConversationResonse> {
-        self.request::<resp::GetConversationResonse>(
-            format!("{URL_CHATGPT_BASE}/conversation/{}", req.conversation_id),
-            RequestMethod::GET,
-        )
-        .await
+        match req.conversation_id {
+            Some(conversation_id) => {
+                self.request::<resp::GetConversationResonse>(
+                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    RequestMethod::GET,
+                )
+                .await
+            }
+            None => Err(ApiError::RequiredParameter("conversation_id".to_string())),
+        }
     }
 
-    pub async fn get_conversations(
+    pub async fn get_conversations<'a>(
         &self,
-        req: req::GetConversationRequest,
+        req: req::GetConversationRequest<'a>,
     ) -> ApiResult<resp::GetConversationsResponse> {
         self.request::<resp::GetConversationsResponse>(
             format!(
-                "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}",
+                "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}&order=updated",
                 req.offset, req.limit
             ),
             RequestMethod::GET,
@@ -202,21 +207,26 @@ impl OpenGPT {
         Ok(v)
     }
 
-    pub async fn patch_conversation(
+    pub async fn patch_conversation<'a>(
         &self,
-        req: req::PatchConversationRequest,
+        req: req::PatchConversationRequest<'a>,
     ) -> ApiResult<resp::PatchConversationResponse> {
-        self.request_payload(
-            format!("{URL_CHATGPT_BASE}/conversation/{}", req.conversation_id),
-            RequestMethod::PATCH,
-            &req,
-        )
-        .await
+        match &req.conversation_id {
+            Some(conversation_id) => {
+                self.request_payload(
+                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    RequestMethod::PATCH,
+                    &req,
+                )
+                .await
+            }
+            None => Err(ApiError::RequiredParameter("conversation_id".to_string())),
+        }
     }
 
-    pub async fn patch_conversations(
+    pub async fn patch_conversations<'a>(
         &self,
-        req: req::PatchConversationRequest,
+        req: req::PatchConversationRequest<'a>,
     ) -> ApiResult<resp::PatchConversationResponse> {
         self.request_payload(
             format!("{URL_CHATGPT_BASE}/conversations"),
@@ -226,9 +236,24 @@ impl OpenGPT {
         .await
     }
 
-    pub async fn message_feedback(
+    pub async fn post_conversation_gen_title<'a>(
         &self,
-        req: req::MessageFeedbackRequest,
+        req: req::PostConversationGenTitleRequest<'a>,
+    ) -> ApiResult<resp::PostConversationGenTitleResponse> {
+        self.request_payload(
+            format!(
+                "{URL_CHATGPT_BASE}/conversation/gen_title/{}",
+                req.conversation_id
+            ),
+            RequestMethod::POST,
+            &req,
+        )
+        .await
+    }
+
+    pub async fn message_feedback<'a>(
+        &self,
+        req: req::MessageFeedbackRequest<'a>,
     ) -> ApiResult<resp::MessageFeedbackResponse> {
         self.request_payload(
             format!("{URL_CHATGPT_BASE}/conversation/message_feedbak"),
@@ -246,7 +271,7 @@ impl super::RefreshToken for OpenGPT {
 }
 
 pub struct OpenGPTBuilder {
-    builder: reqwest_impersonate::ClientBuilder,
+    builder: reqwest::ClientBuilder,
     api: OpenGPT,
 }
 
@@ -294,11 +319,11 @@ impl OpenGPTBuilder {
     pub fn builder() -> OpenGPTBuilder {
         let mut req_headers = HeaderMap::new();
         req_headers.insert(
-            reqwest_impersonate::header::USER_AGENT,
+            reqwest::header::USER_AGENT,
             HeaderValue::from_static(HEADER_UA),
         );
 
-        let client = reqwest_impersonate::ClientBuilder::new()
+        let client = reqwest::ClientBuilder::new()
             .chrome_builder(browser::ChromeVersion::V105)
             .cookie_store(true)
             .default_headers(req_headers);
@@ -307,7 +332,7 @@ impl OpenGPTBuilder {
             builder: client,
             api: OpenGPT {
                 api_prefix: String::from(URL_CHATGPT_BASE),
-                client: reqwest_impersonate::Client::new(),
+                client: reqwest::Client::new(),
                 access_token: RwLock::default(),
             },
         }

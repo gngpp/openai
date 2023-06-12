@@ -1,6 +1,7 @@
 pub mod api;
 pub mod log;
 pub mod oauth;
+pub mod serve;
 pub mod token;
 
 use serde::Deserialize;
