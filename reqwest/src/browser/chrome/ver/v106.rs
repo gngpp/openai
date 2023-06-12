@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use boring::ssl::{
-    CertCompressionAlgorithm, SslConnector, SslConnectorBuilder, SslMethod, SslVersion, SslVerifyMode,
+    CertCompressionAlgorithm, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode,
+    SslVersion,
 };
 use http::{
     header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, UPGRADE_INSECURE_REQUESTS, USER_AGENT},
@@ -35,7 +36,7 @@ fn create_ssl_connector() -> SslConnectorBuilder {
     builder.enable_ocsp_stapling();
 
     builder.set_verify(SslVerifyMode::NONE);
-    
+
     let cipher_list = [
         "TLS_AES_128_GCM_SHA256",
         "TLS_AES_256_GCM_SHA384",

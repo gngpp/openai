@@ -2,16 +2,16 @@
 
 #![deny(warnings)]
 
-use reqwest_impersonate::browser::ChromeVersion;
+use reqwest::browser::ChromeVersion;
 
 // This is using the `tokio` runtime. You'll need the following dependency:
 //
 // `tokio = { version = "1", features = ["full"] }`
 #[cfg(not(target_arch = "wasm32"))]
 
-fn main() -> Result<(), reqwest_impersonate::Error> {
+fn main() -> Result<(), reqwest::Error> {
     // Build a client to mimic Chrome 104
-    let client = reqwest_impersonate::blocking::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .chrome_builder(ChromeVersion::V108)
         .build()
         .unwrap();
