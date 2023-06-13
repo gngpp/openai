@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use openai::serve::ConfigBuilder;
+use openai::serve::LauncherBuilder;
 use std::{io::Write, path::PathBuf, sync::Once};
 
 pub mod account;
@@ -76,14 +76,15 @@ async fn main() -> anyhow::Result<()> {
                 tls_cert,
                 tls_key,
             } => {
-                let conf = ConfigBuilder::default()
+                LauncherBuilder::default()
                     .host(host.unwrap())
                     .port(port.unwrap())
                     .workers(workers.unwrap())
                     .tls_cert(tls_cert)
                     .tls_key(tls_key)
-                    .build()?;
-                openai::serve::run(conf).await?
+                    .build()?
+                    .run()
+                    .await?
             }
         },
         None => prompt::main_prompt()?,

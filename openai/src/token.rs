@@ -148,9 +148,6 @@ impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
     }
 }
 
-static ONCE: std::sync::Once = std::sync::Once::new();
-
-static mut MEM_STORAGE: std::mem::MaybeUninit<MemStore> = std::mem::MaybeUninit::uninit();
 #[derive(Debug)]
 pub struct MemStore(RwLock<HashMap<String, AuthenticateToken>>);
 
@@ -171,12 +168,7 @@ impl MemStore {
     /// println!("Profile: {:#?}", auth.get_user_info()?);
     /// ```
     pub fn new() -> Self {
-        ONCE.call_once(|| unsafe {
-            MEM_STORAGE
-                .as_mut_ptr()
-                .write(MemStore(RwLock::new(HashMap::new())))
-        });
-        unsafe { MEM_STORAGE.as_mut_ptr().read() }
+        MemStore(RwLock::new(HashMap::new()))
     }
 }
 
@@ -207,7 +199,6 @@ impl AuthenticateTokenStore for MemStore {
     }
 }
 
-static mut FILE_STORAGE: std::mem::MaybeUninit<FileStore> = std::mem::MaybeUninit::uninit();
 pub struct FileStore(PathBuf);
 
 impl Default for FileStore {
@@ -217,8 +208,7 @@ impl Default for FileStore {
             std::fs::File::create(&default_path)
                 .expect(&TokenStoreError::CreateDefaultTokenFileError.to_string());
         }
-        ONCE.call_once(|| unsafe { FILE_STORAGE.as_mut_ptr().write(FileStore(default_path)) });
-        unsafe { FILE_STORAGE.as_mut_ptr().read() }
+        FileStore(default_path)
     }
 }
 
@@ -233,8 +223,7 @@ impl FileStore {
         if path.exists().not() {
             tokio::fs::File::create(&path).await?;
         }
-        ONCE.call_once(|| unsafe { FILE_STORAGE.as_mut_ptr().write(FileStore(path)) });
-        Ok(unsafe { FILE_STORAGE.as_mut_ptr().read() })
+        Ok(FileStore(path))
     }
 }
 

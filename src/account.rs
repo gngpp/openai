@@ -20,7 +20,6 @@ pub(crate) trait AccountStore: Send + Sync {
     async fn list_account(&self) -> AccountResult<Option<Vec<Account>>>;
 }
 
-static mut FILE_STORAGE: std::mem::MaybeUninit<AccountFileStore> = std::mem::MaybeUninit::uninit();
 pub struct AccountFileStore(PathBuf);
 
 impl AccountFileStore {
@@ -36,9 +35,7 @@ impl AccountFileStore {
         if path.exists().not() {
             tokio::fs::File::create(&path).await?;
         }
-        crate::ONCE_INIT
-            .call_once(|| unsafe { FILE_STORAGE.as_mut_ptr().write(AccountFileStore(path)) });
-        Ok(unsafe { FILE_STORAGE.as_mut_ptr().read() })
+        Ok(AccountFileStore(path))
     }
 }
 
