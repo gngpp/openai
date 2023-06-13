@@ -13,11 +13,9 @@ use crate::{api::models::req::PostConversationBody, debug};
 
 use super::{
     models::{req, resp},
-    ApiError, ApiResult, PostConversationStreamResponse, RequestMethod,
+    ApiError, ApiResult, PostConversationStreamResponse, RequestMethod, HEADER_UA,
+    URL_CHATGPT_BASE,
 };
-
-const HEADER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36";
-const URL_CHATGPT_BASE: &str = "https://chat.openai.com/backend-api";
 
 pub struct OpenGPT {
     api_prefix: String,
@@ -152,7 +150,7 @@ impl OpenGPT {
         .await
     }
 
-    pub async fn post_conversation_stream(
+    pub async fn post_conversation(
         &self,
         req: req::PostConversationRequest,
     ) -> anyhow::Result<PostConversationStreamResponse> {
@@ -171,7 +169,7 @@ impl OpenGPT {
         )))
     }
 
-    pub async fn post_conversation(
+    pub async fn post_conversation_completions(
         &self,
         req: req::PostConversationRequest,
     ) -> ApiResult<Vec<resp::PostConversationResponse>> {

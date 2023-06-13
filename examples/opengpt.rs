@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     let mut resp: openai::api::PostConversationStreamResponse = api
-        .post_conversation_stream(PostConversationRequest::Next(req))
+        .post_conversation(PostConversationRequest::Next(req))
         .await?;
 
     let mut previous_response = String::new();
