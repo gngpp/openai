@@ -68,9 +68,7 @@ async fn main() -> anyhow::Result<()> {
                 workdir,
                 unofficial_api,
                 unofficial_proxy,
-            } => {
-
-            },
+            } => {}
             SubCommands::Serve {
                 host,
                 port,
