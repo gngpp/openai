@@ -29,7 +29,7 @@ enum SubCommands {
         #[clap(short = 'P', long, env = "OPENGPT_PORT", default_value = "7999", value_parser = parse_port_in_range)]
         port: Option<u16>,
         /// Server worker-pool size (Recommended number of CPU cores)
-        #[clap(short, long, env = "OPENGPT_WORKERS", default_value = "1")]
+        #[clap(short = 'W', long, env = "OPENGPT_WORKERS", default_value = "1")]
         workers: Option<usize>,
         /// TLS certificate file path
         #[clap(long, env = "OPENGPT_TLS_CERT", requires = "tls_key")]
@@ -37,6 +37,33 @@ enum SubCommands {
         /// TLS private key file path
         #[clap(long, env = "OPENGPT_TLS_KEY", requires = "tls_cert")]
         tls_key: Option<PathBuf>,
+        /// Enable token bucket flow limitation
+        #[clap(short = 'T', long, env = "OPENGPT_TB_ENABLE")]
+        tb_enable: bool,
+        /// Token bucket capacity
+        #[clap(
+            long,
+            env = "OPENGPT_TB_CAPACITY",
+            default_value = "60",
+            requires = "tb_enable"
+        )]
+        tb_capacity: u32,
+        /// Token bucket fill rate
+        #[clap(
+            long,
+            env = "OPENGPT_TB_FILL_RATE",
+            default_value = "1",
+            requires = "tb_enable"
+        )]
+        tb_fill_rate: u32,
+        /// Token bucket expired (second)
+        #[clap(
+            long,
+            env = "OPENGPT_TB_EXPIRED",
+            default_value = "86400",
+            requires = "tb_enable"
+        )]
+        tb_expired: u32,
     },
     /// Account configuration settings
     Account,
@@ -65,9 +92,9 @@ async fn main() -> anyhow::Result<()> {
                 prompt::account_prompt()?;
             }
             SubCommands::Config {
-                workdir,
-                unofficial_api,
-                unofficial_proxy,
+                workdir: _,
+                unofficial_api: _,
+                unofficial_proxy: _,
             } => {}
             SubCommands::Serve {
                 host,
@@ -75,16 +102,26 @@ async fn main() -> anyhow::Result<()> {
                 workers,
                 tls_cert,
                 tls_key,
+                tb_enable,
+                tb_capacity,
+                tb_fill_rate,
+                tb_expired,
             } => {
-                LauncherBuilder::default()
+                let mut builder = LauncherBuilder::default();
+                let mut builder = builder
                     .host(host.unwrap())
                     .port(port.unwrap())
+                    .tls_keypair(None)
                     .workers(workers.unwrap())
-                    .tls_cert(tls_cert)
-                    .tls_key(tls_key)
-                    .build()?
-                    .run()
-                    .await?
+                    .tb_enable(tb_enable)
+                    .tb_capacity(tb_capacity)
+                    .tb_fill_rate(tb_fill_rate)
+                    .tb_expired(tb_expired);
+
+                if tls_key.is_some() && tls_cert.is_some() {
+                    builder = builder.tls_keypair(Some((tls_cert.unwrap(), tls_key.unwrap())));
+                }
+                builder.build()?.run().await?
             }
         },
         None => prompt::main_prompt()?,

@@ -1,8 +1,12 @@
+pub mod middleware;
+#[cfg(feature = "limit")]
+pub mod tokenbucket;
+
+use actix_web::http::header;
 use actix_web::middleware::Logger;
 use actix_web::web::Json;
 use actix_web::{get, patch, post, App, HttpResponse, HttpServer, Responder};
 use actix_web::{web, HttpRequest};
-use anyhow::Context;
 use derive_builder::Builder;
 use reqwest::Client;
 use serde_json::Value;
@@ -13,6 +17,9 @@ use std::sync::{Arc, Once};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::net::IpAddr;
 use std::path::PathBuf;
+
+use crate::info;
+use crate::serve::tokenbucket::TokenBucket;
 
 use super::api::{HEADER_UA, URL_CHATGPT_BASE};
 
@@ -31,16 +38,23 @@ fn client() -> &'static Client {
     if let Some(client) = unsafe { &CLIENT } {
         return client;
     }
-    panic!("request client is required")
+    panic!("The requesting client must be initialized")
 }
 
-#[derive(Builder)]
+#[derive(Builder, Clone)]
 pub struct Launcher {
     host: IpAddr,
     port: u16,
     workers: usize,
-    tls_cert: Option<PathBuf>,
-    tls_key: Option<PathBuf>,
+    tls_keypair: Option<(PathBuf, PathBuf)>,
+    /// Enable token bucket flow limitation
+    tb_enable: bool,
+    /// Token bucket capacity
+    tb_capacity: u32,
+    /// Token bucket fill rate
+    tb_fill_rate: u32,
+    /// Token bucket expired (second)
+    tb_expired: u32,
 }
 
 impl Launcher {
@@ -60,40 +74,85 @@ impl Launcher {
 
         initialize_client(client);
 
-        let serve = HttpServer::new(|| {
-            App::new()
-                .wrap(Logger::default())
-                .service(get_models)
-                .service(account_check)
-                .service(get_conversation)
-                .service(get_conversations)
-                .service(post_conversation)
-                .service(post_conversation_gen_title)
-                .service(post_conversation_message_feedback)
-                .service(patch_conversation)
-                .service(patch_conversations)
-        })
-        .keep_alive(None)
-        .workers(self.workers);
-        match self.tls_key {
-            Some(tls_key) => {
-                let tls_config = Self::load_rustls_config(
-                    self.tls_cert.context("tls cert file is required")?,
-                    tls_key,
-                )
-                .await?;
-                serve
-                    .bind_rustls((self.host, self.port), tls_config)?
+        info!(
+            "Starting HTTP(S) server at http(s)://{}:{}",
+            self.host, self.port
+        );
+        let ctls_keypaird = self.tls_keypair.clone();
+        let default_serve = async {
+            let serve = HttpServer::new(move || {
+                App::new()
+                    .wrap(Logger::default())
+                    .wrap(middleware::TokenAuthorization)
+                    .service(get_models)
+                    .service(get_account_check)
+                    .service(get_conversation)
+                    .service(get_conversations)
+                    .service(post_conversation)
+                    .service(post_conversation_gen_title)
+                    .service(post_conversation_message_feedback)
+                    .service(patch_conversation)
+                    .service(patch_conversations)
+            })
+            .keep_alive(None)
+            .workers(self.workers);
+            match ctls_keypaird {
+                Some(keypair) => {
+                    let tls_config = Self::load_rustls_config(keypair.0, keypair.1).await?;
+                    serve
+                        .bind_rustls((self.host, self.port), tls_config)?
+                        .run()
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                }
+                None => serve
+                    .bind((self.host, self.port))?
                     .run()
                     .await
-                    .map_err(|e| anyhow::anyhow!(e))
+                    .map_err(|e| anyhow::anyhow!(e)),
             }
-            None => serve
-                .bind((self.host, self.port))?
-                .run()
-                .await
-                .map_err(|e| anyhow::anyhow!(e)),
+        };
+
+        #[cfg(feature = "limit")]
+        if self.tb_enable {
+            let serve = HttpServer::new(move || {
+                let mw = TokenBucket::new(self.tb_capacity, self.tb_fill_rate, self.tb_expired);
+                App::new()
+                    .wrap(Logger::default())
+                    .wrap(middleware::TokenBucketRateLimiter::new(mw))
+                    .wrap(middleware::TokenAuthorization)
+                    .service(get_models)
+                    .service(get_account_check)
+                    .service(get_conversation)
+                    .service(get_conversations)
+                    .service(post_conversation)
+                    .service(post_conversation_gen_title)
+                    .service(post_conversation_message_feedback)
+                    .service(patch_conversation)
+                    .service(patch_conversations)
+            })
+            .keep_alive(None)
+            .workers(self.workers);
+            match self.tls_keypair {
+                Some(keypair) => {
+                    let tls_config = Self::load_rustls_config(keypair.0, keypair.1).await?;
+                    serve
+                        .bind_rustls((self.host, self.port), tls_config)?
+                        .run()
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                }
+                None => serve
+                    .bind((self.host, self.port))?
+                    .run()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e)),
+            }
+        } else {
+            default_serve.await
         }
+        #[cfg(not(feature = "limit"))]
+        default_serve.await
     }
 
     async fn load_rustls_config(
@@ -136,12 +195,12 @@ async fn get_models(req: HttpRequest) -> impl Responder {
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
 #[post("/backend-api/accounts/check")]
-async fn account_check(req: HttpRequest) -> impl Responder {
+async fn get_account_check(req: HttpRequest) -> impl Responder {
     match client()
         .get(format!("{URL_CHATGPT_BASE}/accounts/check"))
         .headers(header_convert(req.headers()))
@@ -149,7 +208,7 @@ async fn account_check(req: HttpRequest) -> impl Responder {
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -165,7 +224,7 @@ async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) 
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -185,7 +244,7 @@ async fn get_conversations(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -199,7 +258,7 @@ async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responde
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -217,7 +276,7 @@ async fn patch_conversation(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -231,7 +290,7 @@ async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Respon
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -251,7 +310,7 @@ async fn post_conversation_gen_title(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
@@ -265,16 +324,25 @@ async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>)
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => HttpResponse::BadGateway().body(err.to_string()),
+        Err(err) => response_bad_handle(err),
     }
 }
 
 fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::header::HeaderMap {
     headers
         .iter()
-        .filter(|v| v.0.to_string().to_lowercase().ne("connection"))
+        .filter(|v| {
+            let h = v.0;
+            h.ne(&header::CONNECTION) && h.ne(&header::USER_AGENT)
+        })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
+}
+
+fn response_bad_handle(err: reqwest::Error) -> HttpResponse {
+    HttpResponse::BadGateway()
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .body(err.to_string())
 }
 
 fn response_handle(resp: reqwest::Response) -> HttpResponse {

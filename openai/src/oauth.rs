@@ -279,10 +279,8 @@ impl OAuth {
         if status.is_redirection() {
             let location: &str = Self::get_location_path(resp.headers())?;
 
-            if location.starts_with("/authorize/resume?") {
-                if self.mfa.is_none() {
-                    anyhow::bail!(OAuthError::MFAFailed)
-                }
+            if location.starts_with("/authorize/resume?") && self.mfa.is_none() {
+                anyhow::bail!(OAuthError::MFAFailed)
             }
             return self
                 .authenticate_resume(code_verifier, location, &url)

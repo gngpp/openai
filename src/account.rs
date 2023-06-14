@@ -43,7 +43,7 @@ impl AccountFileStore {
 impl AccountStore for AccountFileStore {
     async fn add_account(&self, account: Account) -> AccountResult<Option<Account>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        let mut data: HashMap<String, Account> = if bytes.len() == 0 {
+        let mut data: HashMap<String, Account> = if bytes.is_empty() {
             HashMap::new()
         } else {
             serde_json::from_slice(&bytes).map_err(|e| anyhow::anyhow!(e))?
@@ -56,7 +56,7 @@ impl AccountStore for AccountFileStore {
 
     async fn get_account<'a>(&self, email: &'a str) -> AccountResult<Option<Account>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(None);
         }
         let data: HashMap<String, Account> =
@@ -66,7 +66,7 @@ impl AccountStore for AccountFileStore {
 
     async fn delete_account<'a>(&self, email: &'a str) -> AccountResult<Option<Account>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(None);
         }
         let mut data: HashMap<String, Account> =
@@ -79,7 +79,7 @@ impl AccountStore for AccountFileStore {
 
     async fn list_account(&self) -> AccountResult<Option<Vec<Account>>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(None);
         }
         let data: HashMap<String, Account> =
@@ -95,6 +95,7 @@ pub(crate) struct Account {
     password: String,
 }
 
+#[allow(dead_code)]
 impl Account {
     pub(crate) fn new(email: String, password: String) -> Self {
         Self { email, password }

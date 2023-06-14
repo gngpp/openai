@@ -2,10 +2,10 @@
 macro_rules! info {
     // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
     // info!(target: "my_target", "a {} event", "log")
-    (target: $target:expr, $($arg:tt)+) => (log::info!("[{}] {}",std::panic::Location::caller(), $($arg)+));
+    (target: $target:expr, $($arg:tt)+) => (log::info!($($arg)+));
 
     // info!("a {} event", "log")
-    ($($arg:tt)+) => (log::info!("[{}] {}", std::panic::Location::caller(),  format!($($arg)+)))
+    ($($arg:tt)+) => (log::info!($($arg)+))
 }
 
 #[macro_export]
