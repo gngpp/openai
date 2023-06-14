@@ -316,7 +316,13 @@ fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
     anyhow::bail!(OAuthError::InvalidAccessToken)
 }
 
+pub async fn verify_access_token_for_u8(token: &[u8]) -> TokenResult<()> {
+    let x = String::from_utf8(token.to_vec())?;
+    verify_access_token(&x).await
+}
+
 pub async fn verify_access_token(token: &str) -> TokenResult<()> {
+    let token = token.trim_start_matches("Bearer ");
     if token.starts_with("sk-") {
         return Ok(());
     }
