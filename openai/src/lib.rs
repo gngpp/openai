@@ -1,6 +1,7 @@
 pub mod api;
 pub mod log;
 pub mod oauth;
+#[cfg(feature = "serve")]
 pub mod serve;
 pub mod token;
 
