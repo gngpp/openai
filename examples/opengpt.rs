@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
         previous_message = message.to_string();
     }
 
-    println!("end");
+    println!("\nconversation end/stop");
 
     if let Some(end) = end_turn {
         if end {
@@ -85,7 +85,16 @@ async fn main() -> anyhow::Result<()> {
                 .conversation_id(conversation_id.as_ref())
                 .build()?;
             let resp = api.get_conversation(req).await?;
-            println!("{:#?}", resp);
+            println!("{:?}", resp);
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            // // clart conversation
+            let req = req::PatchConversationRequestBuilder::default()
+                .conversation_id(conversation_id.as_ref())
+                .is_visible(false)
+                .build()?;
+            let resp = api.patch_conversation(req).await?;
+            println!("{:?}", resp);
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         }
     }
@@ -96,15 +105,6 @@ async fn main() -> anyhow::Result<()> {
     //     .limit(20)
     //     .build()?;
     // let resp = api.get_conversations(req).await?;
-    // println!("{:#?}", resp);
-    // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-    // // clart conversation
-    // let req = req::PatchConversationRequestBuilder::default()
-    //     .conversation_id("3de1bd20-ecea-4bf7-96f5-b8eb681b180d".to_owned())
-    //     .is_visible(false)
-    //     .build()?;
-    // let resp = api.patch_conversation(req).await?;
     // println!("{:#?}", resp);
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
