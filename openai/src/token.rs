@@ -43,10 +43,10 @@ pub trait AuthenticateTokenStore: Send + Sync {
     ) -> TokenResult<Option<AuthenticateToken>>;
 
     // Read Authenticate Token return a copy of the Token
-    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>>;
+    async fn get_token(&self, email: &str) -> TokenResult<Option<AuthenticateToken>>;
 
     // Delete Authenticate Token return an current Token
-    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>>;
+    async fn delete_token(&mut self, email: &str) -> TokenResult<Option<AuthenticateToken>>;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -119,7 +119,7 @@ impl TryFrom<crate::oauth::AccessToken> for AuthenticateToken {
 
     fn try_from(value: crate::oauth::AccessToken) -> Result<Self, Self::Error> {
         let profile = Profile::try_from(value.id_token)?;
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(i64::from(value.expires_in))
+        let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
             - chrono::Duration::minutes(5))
         .timestamp();
         Ok(Self {
@@ -136,7 +136,7 @@ impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
 
     fn try_from(value: crate::oauth::RefreshToken) -> Result<Self, Self::Error> {
         let profile = Profile::try_from(value.id_token)?;
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(i64::from(value.expires_in))
+        let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
             - chrono::Duration::minutes(5))
         .timestamp();
         Ok(Self {
@@ -150,6 +150,12 @@ impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
 
 #[derive(Debug)]
 pub struct MemStore(RwLock<HashMap<String, AuthenticateToken>>);
+
+impl Default for MemStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl MemStore {
     /// # Examples
@@ -185,12 +191,12 @@ impl AuthenticateTokenStore for MemStore {
             .insert(token.profile.email.to_string(), token))
     }
 
-    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+    async fn get_token(&self, email: &str) -> TokenResult<Option<AuthenticateToken>> {
         let binding = self.0.read().map_err(|_| TokenStoreError::AccessError)?;
         Ok(binding.get(email).cloned())
     }
 
-    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+    async fn delete_token(&mut self, email: &str) -> TokenResult<Option<AuthenticateToken>> {
         Ok(self
             .0
             .write()
@@ -205,8 +211,12 @@ impl Default for FileStore {
     fn default() -> Self {
         let default_path = PathBuf::from(crate::DEFAULT_TOKEN_FILE);
         if default_path.exists().not() {
-            std::fs::File::create(&default_path)
-                .expect(&TokenStoreError::CreateDefaultTokenFileError.to_string());
+            std::fs::File::create(&default_path).unwrap_or_else(|_| {
+                panic!(
+                    "{}",
+                    TokenStoreError::CreateDefaultTokenFileError.to_string()
+                )
+            });
         }
         FileStore(default_path)
     }
@@ -237,7 +247,7 @@ impl AuthenticateTokenStore for FileStore {
             .await
             .context(TokenStoreError::AccessTokenVerifyError)?;
         let bytes = tokio::fs::read(&self.0).await?;
-        let mut data: HashMap<String, AuthenticateToken> = if bytes.len() == 0 {
+        let mut data: HashMap<String, AuthenticateToken> = if bytes.is_empty() {
             HashMap::new()
         } else {
             serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::AccessError)?
@@ -248,9 +258,9 @@ impl AuthenticateTokenStore for FileStore {
         Ok(v)
     }
 
-    async fn get_token(&self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+    async fn get_token(&self, email: &str) -> TokenResult<Option<AuthenticateToken>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(None);
         }
         let data: HashMap<String, AuthenticateToken> =
@@ -258,9 +268,9 @@ impl AuthenticateTokenStore for FileStore {
         Ok(data.get(email).cloned())
     }
 
-    async fn delete_token(&mut self, email: &String) -> TokenResult<Option<AuthenticateToken>> {
+    async fn delete_token(&mut self, email: &str) -> TokenResult<Option<AuthenticateToken>> {
         let bytes = tokio::fs::read(&self.0).await?;
-        if bytes.len() == 0 {
+        if bytes.is_empty() {
             return Ok(None);
         }
         let mut data: HashMap<String, AuthenticateToken> =
@@ -303,7 +313,7 @@ async fn keys() -> TokenResult<KeyResult> {
 fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
     let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
     let verifier = Verifier::create().build()?;
-    let claims: Value = verifier.verify(&token, &alg)?;
+    let claims: Value = verifier.verify(token, &alg)?;
     let claims_str = claims.to_string();
     if claims_str.contains("https://openai.openai.auth0app.com/userinfo")
         && claims_str.contains("https://auth0.openai.com/")

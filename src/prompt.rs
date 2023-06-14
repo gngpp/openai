@@ -29,13 +29,13 @@ pub(crate) fn main_prompt() -> anyhow::Result<()> {
     "#;
     loop {
         println!("{}", banner);
-        let email = Text::new("Email:")
+        let _email = Text::new("Email:")
             .with_validator(required!("email is required"))
             .with_validator(min_length!(8))
             .with_help_message("OpenAI account email, Format: example@gmail.com")
             .prompt()?;
 
-        let password = Password::new("Password:")
+        let _password = Password::new("Password:")
             .with_display_toggle_enabled()
             .with_display_mode(PasswordDisplayMode::Masked)
             .with_validator(required!("password is required"))
@@ -45,7 +45,9 @@ pub(crate) fn main_prompt() -> anyhow::Result<()> {
             .with_custom_confirmation_error_message("The password don't match.")
             .prompt()
             .context("An error happened when asking for your account, try again later.")?;
-        break;
+        if _email.is_empty() || _password.is_empty() {
+            break;
+        }
     }
     Ok(())
 }

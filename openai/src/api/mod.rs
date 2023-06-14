@@ -5,6 +5,8 @@ use std::{
 
 use futures_util::Stream;
 
+use crate::debug;
+
 use self::models::resp::PostConversationResponse;
 
 pub mod chatgpt;
@@ -111,12 +113,13 @@ impl Stream for PostConversationStreamResponse {
                             return Poll::Ready(Some(json));
                         }
                         Err(e) => {
-                            ApiError::SerdeDeserializeError(e);
+                            debug!("Error in stream: {:?}", e);
+                            return Poll::Ready(None);
                         }
                     }
                 }
-                Poll::Ready(Some(Err(error))) => {
-                    eprintln!("Error in stream: {:?}", error);
+                Poll::Ready(Some(Err(e))) => {
+                    debug!("Error in stream: {:?}", e);
                     return Poll::Ready(None);
                 }
                 Poll::Ready(None) => {

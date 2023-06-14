@@ -1,3 +1,5 @@
+use std::time;
+
 use futures_util::StreamExt;
 use openai::api::models::req::{self, PostConversationRequest};
 use tokio::io::AsyncWriteExt;
@@ -19,6 +21,8 @@ async fn main() -> anyhow::Result<()> {
     let api = openai::api::opengpt::OpenGPTBuilder::builder()
         .access_token(token.access_token().to_owned())
         .cookie_store(false)
+        .client_timeout(time::Duration::from_secs(1000))
+        .client_connect_timeout(time::Duration::from_secs(1000))
         .build();
 
     let resp = api.get_models().await?;
@@ -32,13 +36,18 @@ async fn main() -> anyhow::Result<()> {
         .post_conversation(PostConversationRequest::Next(req))
         .await?;
 
-    let mut previous_response = String::new();
+    let mut previous_message = String::new();
     let mut out: tokio::io::Stdout = tokio::io::stdout();
     let mut conversation_id: Option<String> = None;
     let mut message_id: Option<String> = None;
+    let mut end_turn: Option<bool> = None;
     while let Some(body) = resp.next().await {
         if conversation_id.is_none() {
             conversation_id = Some(body.conversation_id.to_string())
+        }
+
+        if end_turn.is_none() {
+            end_turn = body.end_turn()
         }
 
         if let Some(end) = body.end_turn() {
@@ -47,35 +56,39 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         let message = &body.message()[0];
-        if message.starts_with(&previous_response) {
-            let new_chars: String = message.chars().skip(previous_response.len()).collect();
+        if message.starts_with(&previous_message) {
+            let new_chars: String = message.chars().skip(previous_message.len()).collect();
             out.write_all(new_chars.as_bytes()).await?;
         } else {
             out.write_all(message.as_bytes()).await?;
         }
         out.flush().await?;
-        previous_response = message.to_string();
+        previous_message = message.to_string();
     }
 
-    println!();
+    println!("end");
 
-    let conversation_id = conversation_id.unwrap_or_default();
-    let message_id = message_id.unwrap_or_default();
+    if let Some(end) = end_turn {
+        if end {
+            let conversation_id = conversation_id.unwrap_or_default();
+            let message_id = message_id.unwrap_or_default();
 
-    let req = req::PostConversationGenTitleRequestBuilder::default()
-        .conversation_id(conversation_id.as_ref())
-        .message_id(message_id.as_ref())
-        .build()?;
-    let resp = api.post_conversation_gen_title(req).await?;
-    println!("\n{:?}", resp);
+            let req = req::PostConversationGenTitleRequestBuilder::default()
+                .conversation_id(conversation_id.as_ref())
+                .message_id(message_id.as_ref())
+                .build()?;
+            let resp = api.post_conversation_gen_title(req).await?;
+            println!("\n{:?}", resp);
 
-    // get conversation
-    let req = req::GetConversationRequestBuilder::default()
-        .conversation_id(conversation_id.as_ref())
-        .build()?;
-    let resp = api.get_conversation(req).await?;
-    println!("{:#?}", resp);
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            // get conversation
+            let req = req::GetConversationRequestBuilder::default()
+                .conversation_id(conversation_id.as_ref())
+                .build()?;
+            let resp = api.get_conversation(req).await?;
+            println!("{:#?}", resp);
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        }
+    }
 
     // get conversation list
     // let req = req::GetConversationRequestBuilder::default()

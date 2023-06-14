@@ -62,7 +62,7 @@ where
                 .json(MiddlewareMessage { msg: &msg })
                 // constructed responses map to "right" body
                 .map_into_right_body();
-            return Box::pin(async { Ok(ServiceResponse::new(req, resp)) });
+            Box::pin(async { Ok(ServiceResponse::new(req, resp)) })
         };
 
         if let Some(token) = authorization {
@@ -145,7 +145,7 @@ where
                 .json(MiddlewareMessage { msg: &msg })
                 // constructed responses map to "right" body
                 .map_into_right_body();
-            return Box::pin(async { Ok(ServiceResponse::new(req, resp)) });
+            Box::pin(async { Ok(ServiceResponse::new(req, resp)) })
         };
 
         let conn_info = request.connection_info().clone();
