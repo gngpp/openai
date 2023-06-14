@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 
     let req = req::PostNextConversationBodyBuilder::default()
         .model(resp.models[0].slug.to_string())
-        .prompt("Java Example".to_string())
+        .prompt("Golang Example".to_string())
         .build()?;
 
     let mut resp: openai::api::PostConversationStreamResponse = api
@@ -58,9 +58,13 @@ async fn main() -> anyhow::Result<()> {
         let message = &body.message()[0];
         if message.starts_with(&previous_message) {
             let new_chars: String = message.chars().skip(previous_message.len()).collect();
-            out.write_all(new_chars.as_bytes()).await?;
+            for ele in new_chars.as_bytes() {
+                out.write_u8(*ele).await?;
+            }
         } else {
-            out.write_all(message.as_bytes()).await?;
+            for ele in message.as_bytes() {
+                out.write_u8(*ele).await?;
+            }
         }
         out.flush().await?;
         previous_message = message.to_string();
