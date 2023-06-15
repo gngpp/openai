@@ -1,10 +1,9 @@
-use std::{ops::Not, path::PathBuf, str::FromStr};
+use std::{ops::Not, path::PathBuf};
 
 use crate::{OAuthError, TokenStoreError};
 use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
-use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -13,7 +12,7 @@ use std::{collections::HashMap, sync::RwLock};
 use async_trait::async_trait;
 use serde::Serialize;
 
-pub const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\n\
+pub const PUBLIC_KEY: &[u8] = "-----BEGIN PUBLIC KEY-----\n\
 MIIC+zCCAeOgAwIBAgIJLlfMWYK8snRdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNVBAM\n\
 TEG9wZW5haS5hdXRoMC5jb20wHhcNMjAwMjExMDUyMjI5WhcNMzMxMDIwMDUyMjI5Wj\n\
 AbMRkwFwYDVQQDExBvcGVuYWkuYXV0aDAuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCA\n\
@@ -30,9 +29,8 @@ lbR5pbL5K7ZHeEO6CLNTOg54xLY/6e2ben4wv/LP39E6Gg56+iT/goJHkV64+nu3v3d\n\
 Tmj+uSHWfkq93oG5tsOk2nTN4UCpyT5fWGv4eh7q2cKElMQM5GT/uZnCjEdDmJU2M11\n\
 k6Ttg+FMNPgvH6R4e+lqhtmslXwXv9Xm95eS6JokJaYUimNX+dzhD+eRq+88vGJO63s\n\
 afkEyGvifAMJFPwO78=\n\
------END PUBLIC KEY-----";
-const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
-const UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
+-----END PUBLIC KEY-----"
+    .as_bytes();
 
 pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
@@ -284,25 +282,29 @@ impl AuthenticateTokenStore for FileStore {
     }
 }
 
+#[cfg(feature = "remote-token")]
 #[derive(Deserialize)]
 struct Keys {
     alg: String,
     x5c: Vec<String>,
 }
 
+#[cfg(feature = "remote-token")]
 #[derive(Deserialize)]
 struct KeyResult {
     keys: Vec<Keys>,
 }
 
+#[cfg(feature = "remote--token")]
 async fn keys() -> TokenResult<KeyResult> {
-    use reqwest::Client;
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
+    use reqwest::header;
+    use std::str::FromStr;
+    let client = reqwest::Client::builder()
+        .user_agent("ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)")
+        .timeout(std::time::Duration::from_secs(3))
         .build()?;
     let resp = client
-        .get(OAUTH_PUBLIC_KEY_URL)
-        .header(header::USER_AGENT, header::HeaderValue::from_static(UA))
+        .get("https://auth0.openai.com/.well-known/jwks.json")
         .send()
         .await?;
     if resp.status().is_success() {
@@ -338,8 +340,11 @@ pub async fn verify_access_token(token: &str) -> TokenResult<()> {
     if token.starts_with("sk-") {
         return Ok(());
     }
-    match verify(token, PUBLIC_KEY.as_bytes(), AlgorithmID::RS256) {
+    match verify(token, PUBLIC_KEY, AlgorithmID::RS256) {
         Ok(_) => Ok(()),
+        #[cfg(not(feature = "remote-token"))]
+        Err(err) => Err(err),
+        #[cfg(feature = "remote-token")]
         Err(_) => {
             let key_result = keys().await?;
             let key = key_result
@@ -347,10 +352,7 @@ pub async fn verify_access_token(token: &str) -> TokenResult<()> {
                 .first()
                 .ok_or(OAuthError::FailedPubKeyRequest)?;
             let pub_key = key.x5c.first().ok_or(OAuthError::FailedPubKeyRequest)?;
-            let pub_key = format!(
-                "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
-                pub_key
-            );
+            let pub_key = format!("-----BEGIN PUBLIC KEY-----{pub_key}-----END PUBLIC KEY-----");
             let alg = AlgorithmID::from_str(key.alg.as_str())?;
             verify(token, pub_key.as_bytes(), alg)
         }
