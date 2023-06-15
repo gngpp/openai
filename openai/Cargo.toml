@@ -47,6 +47,7 @@ h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 default = ["serve", "limit"]
 serve = []
 limit = []
+remote-token = []
 
 [lib]
 name = "openai"
