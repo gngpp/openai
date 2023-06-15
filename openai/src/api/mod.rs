@@ -29,27 +29,29 @@ pub enum RequestMethod {
 #[derive(thiserror::Error, Debug)]
 pub enum ApiError {
     #[error("failed to cookie")]
-    FailedGetCookie,
+    FailedGetCookieError,
     #[error("invalid cookie")]
-    InvalidCookie,
+    InvalidCookieError,
     #[error(transparent)]
     SerdeDeserializeError(#[from] serde_json::error::Error),
     #[error(transparent)]
-    ReqwestJsonDeserializeError(#[from] reqwest::Error),
+    JsonReqwestDeserializeError(#[from] reqwest::Error),
     #[error(transparent)]
-    AnyhowJsonDeserializeError(#[from] anyhow::Error),
+    JsonAnyhowDeserializeError(#[from] anyhow::Error),
     #[error("failed serialize `{0}`")]
     SerializeError(String),
     #[error("system time exception")]
     SystemTimeExceptionError,
+    #[error("too many requests `{0}`")]
+    TooManyRequestsError(String),
     #[error("failed authentication `{0}`")]
     BadAuthenticationError(String),
     #[error("failed request `{0}`")]
-    FailedRequest(String),
+    FailedRequestError(String),
     #[error("redirection error")]
     RedirectionError,
     #[error("bad request `{0}`")]
-    BadRequest(String),
+    BadRequestError(String),
     #[error("server error")]
     ServerError,
     #[error("format prefix string error")]

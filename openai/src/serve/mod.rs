@@ -12,40 +12,45 @@ use reqwest::Client;
 use serde_json::Value;
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::{Arc, Once};
+use std::sync::Once;
 
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use crate::info;
+use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;
+use crate::{info, oauth};
 
 use super::api::{HEADER_UA, URL_CHATGPT_BASE};
 
 static INIT: Once = Once::new();
-static mut CLIENT: Option<Arc<Client>> = None;
+static mut CLIENT: Option<Client> = None;
+static mut OAUTH_CLIENT: Option<OAuthClient> = None;
 
-fn initialize_client(client: Client) {
-    unsafe {
-        INIT.call_once(|| {
-            CLIENT = Some(Arc::new(client));
-        });
-    }
-}
-
-fn client() -> &'static Client {
+fn client() -> Client {
     if let Some(client) = unsafe { &CLIENT } {
-        return client;
+        return client.clone();
     }
     panic!("The requesting client must be initialized")
 }
 
+fn oauth_client() -> OAuthClient {
+    if let Some(oauth_client) = unsafe { &OAUTH_CLIENT } {
+        return oauth_client.clone();
+    }
+    panic!("The requesting oauth client must be initialized")
+}
+
 #[derive(Builder, Clone)]
 pub struct Launcher {
+    /// Listen addres
     host: IpAddr,
+    /// Listen port
     port: u16,
+    /// Machine worker pool
     workers: usize,
+    /// TLS keypair
     tls_keypair: Option<(PathBuf, PathBuf)>,
     /// Enable token bucket flow limitation
     tb_enable: bool,
@@ -69,10 +74,19 @@ impl Launcher {
             .chrome_builder(reqwest::browser::ChromeVersion::V105)
             .default_headers(headers)
             .cookie_store(false)
-            .build()
-            .unwrap();
+            .build()?;
 
-        initialize_client(client);
+        let oauth_client = oauth::OAuthClientBuilder::builder()
+            .cookie_store(true)
+            .pool_max_idle_per_host(self.workers)
+            .build();
+
+        unsafe {
+            INIT.call_once(|| {
+                CLIENT = Some(client);
+                OAUTH_CLIENT = Some(oauth_client);
+            });
+        }
 
         info!(
             "Starting HTTP(S) server at http(s)://{}:{}",
@@ -83,16 +97,25 @@ impl Launcher {
             let serve = HttpServer::new(move || {
                 App::new()
                     .wrap(Logger::default())
-                    .wrap(middleware::TokenAuthorization)
-                    .service(get_models)
-                    .service(get_account_check)
-                    .service(get_conversation)
-                    .service(get_conversations)
-                    .service(post_conversation)
-                    .service(post_conversation_gen_title)
-                    .service(post_conversation_message_feedback)
-                    .service(patch_conversation)
-                    .service(patch_conversations)
+                    .service(
+                        web::scope("/backend-api")
+                            .wrap(middleware::TokenAuthorization)
+                            .service(get_models)
+                            .service(get_account_check)
+                            .service(get_conversation)
+                            .service(get_conversations)
+                            .service(post_conversation)
+                            .service(post_conversation_gen_title)
+                            .service(post_conversation_message_feedback)
+                            .service(patch_conversation)
+                            .service(patch_conversations),
+                    )
+                    .service(
+                        web::scope("/oauth")
+                            .service(do_access_token)
+                            .service(do_refresh_token)
+                            .service(do_revoke_token),
+                    )
             })
             .keep_alive(None)
             .workers(self.workers);
@@ -120,16 +143,25 @@ impl Launcher {
                 App::new()
                     .wrap(Logger::default())
                     .wrap(middleware::TokenBucketRateLimiter::new(mw))
-                    .wrap(middleware::TokenAuthorization)
-                    .service(get_models)
-                    .service(get_account_check)
-                    .service(get_conversation)
-                    .service(get_conversations)
-                    .service(post_conversation)
-                    .service(post_conversation_gen_title)
-                    .service(post_conversation_message_feedback)
-                    .service(patch_conversation)
-                    .service(patch_conversations)
+                    .service(
+                        web::scope("/backend-api")
+                            .wrap(middleware::TokenAuthorization)
+                            .service(get_models)
+                            .service(get_account_check)
+                            .service(get_conversation)
+                            .service(get_conversations)
+                            .service(post_conversation)
+                            .service(post_conversation_gen_title)
+                            .service(post_conversation_message_feedback)
+                            .service(patch_conversation)
+                            .service(patch_conversations),
+                    )
+                    .service(
+                        web::scope("/oauth")
+                            .service(do_access_token)
+                            .service(do_refresh_token)
+                            .service(do_revoke_token),
+                    )
             })
             .keep_alive(None)
             .workers(self.workers);
@@ -186,7 +218,51 @@ impl Launcher {
     }
 }
 
-#[get("/backend-api/models")]
+#[post("/token")]
+async fn do_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
+    match oauth_client().do_access_token(account.into_inner()).await {
+        Ok(token) => HttpResponse::Ok().json(token),
+        Err(err) => response_oauth_bad_handle(&err.to_string()),
+    }
+}
+
+#[post("/refresh_token")]
+async fn do_refresh_token(req: HttpRequest) -> impl Responder {
+    if let Some(token) = req.headers().get(header::AUTHORIZATION) {
+        match token.to_str() {
+            Ok(token_val) => {
+                let token_val = token_val.trim_start_matches("Bearer ");
+                match oauth_client().do_refresh_token(token_val).await {
+                    Ok(token) => HttpResponse::Ok().json(token),
+                    Err(err) => response_oauth_bad_handle(&err.to_string()),
+                }
+            }
+            Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
+        }
+    } else {
+        HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#)
+    }
+}
+
+#[post("/revoke_token")]
+async fn do_revoke_token(req: HttpRequest) -> impl Responder {
+    if let Some(token) = req.headers().get(header::AUTHORIZATION) {
+        match token.to_str() {
+            Ok(token_val) => {
+                let token_val = token_val.trim_start_matches("Bearer ");
+                match oauth_client().do_revoke_token(token_val).await {
+                    Ok(_) => HttpResponse::Ok().finish(),
+                    Err(err) => response_oauth_bad_handle(&err.to_string()),
+                }
+            }
+            Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
+        }
+    } else {
+        HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#)
+    }
+}
+
+#[get("/models")]
 async fn get_models(req: HttpRequest) -> impl Responder {
     match client()
         .get(format!("{URL_CHATGPT_BASE}/models"))
@@ -195,11 +271,11 @@ async fn get_models(req: HttpRequest) -> impl Responder {
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[post("/backend-api/accounts/check")]
+#[post("/accounts/check")]
 async fn get_account_check(req: HttpRequest) -> impl Responder {
     match client()
         .get(format!("{URL_CHATGPT_BASE}/accounts/check"))
@@ -208,11 +284,11 @@ async fn get_account_check(req: HttpRequest) -> impl Responder {
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[get("/backend-api/conversation/{conversation_id}")]
+#[get("/conversation/{conversation_id}")]
 async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) -> impl Responder {
     match client()
         .get(format!(
@@ -224,11 +300,11 @@ async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) 
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[get("/backend-api/conversations")]
+#[get("/conversations")]
 async fn get_conversations(
     req: HttpRequest,
     param: web::Query<ConversationsQuery>,
@@ -244,11 +320,11 @@ async fn get_conversations(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[post("/backend-api/conversation")]
+#[post("/conversation")]
 async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
         .post(format!("{URL_CHATGPT_BASE}/conversation"))
@@ -258,11 +334,11 @@ async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responde
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[patch("/backend-api/conversation/{conversation_id}")]
+#[patch("/conversation/{conversation_id}")]
 async fn patch_conversation(
     req: HttpRequest,
     conversation_id: web::Path<String>,
@@ -276,11 +352,11 @@ async fn patch_conversation(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[patch("/backend-api/conversations")]
+#[patch("/conversations")]
 async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
         .patch(format!("{URL_CHATGPT_BASE}/conversations"))
@@ -290,11 +366,11 @@ async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Respon
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[post("/backend-api/conversation/gen_title/{conversation_id}")]
+#[post("/conversation/gen_title/{conversation_id}")]
 async fn post_conversation_gen_title(
     req: HttpRequest,
     conversation_id: web::Path<String>,
@@ -310,11 +386,11 @@ async fn post_conversation_gen_title(
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
-#[post("/backend-api/conversation/message_feedbak")]
+#[post("/conversation/message_feedbak")]
 async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
         .post(format!("{URL_CHATGPT_BASE}/conversation/message_feedbak"))
@@ -324,7 +400,7 @@ async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>)
         .await
     {
         Ok(resp) => response_handle(resp),
-        Err(err) => response_bad_handle(err),
+        Err(err) => response_internal_server_handle(err),
     }
 }
 
@@ -339,10 +415,12 @@ fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::head
         .collect()
 }
 
-fn response_bad_handle(err: reqwest::Error) -> HttpResponse {
-    HttpResponse::BadGateway()
-        .insert_header((header::CONTENT_TYPE, "application/json"))
-        .body(err.to_string())
+fn response_internal_server_handle(err: reqwest::Error) -> HttpResponse {
+    HttpResponse::InternalServerError().json(err.to_string())
+}
+
+fn response_oauth_bad_handle(msg: &str) -> HttpResponse {
+    HttpResponse::BadRequest().json(msg)
 }
 
 fn response_handle(resp: reqwest::Response) -> HttpResponse {

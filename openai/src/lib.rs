@@ -5,19 +5,23 @@ pub mod oauth;
 pub mod serve;
 pub mod token;
 
-use serde::Deserialize;
-
 pub const DEFAULT_TOKEN_FILE: &str = ".opengpt-access_tokens";
 pub type OAuthResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
-pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
-#[derive(thiserror::Error, Deserialize, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum OAuthError {
-    #[error("bad request (error {error:?}, error_description {error_description:?})")]
-    BadRequest {
-        error: String,
-        error_description: String,
-    },
+    #[error("other request (error {0:?}")]
+    Other(String),
+    #[error("token access (error {0:?}")]
+    TokenAccess(anyhow::Error),
+    #[error("bad request (error {0:?}")]
+    BadRequest(String),
+    #[error("too many requests `{0}`")]
+    TooManyRequests(String),
+    #[error("Unauthorized request (error {0:?}")]
+    Unauthorized(String),
+    #[error("Unauthorized request (error {0:?}")]
+    ServerError(String),
     #[error("failed to get public key")]
     FailedPubKeyRequest,
     #[error("failed login")]
@@ -28,10 +32,12 @@ pub enum OAuthError {
     FailedCallbackCode,
     #[error("failed callback url")]
     FailedCallbackURL,
-    #[error("invalid request login url")]
-    InvalidLoginUrl,
+    #[error("invalid request login url (error {0:?}")]
+    InvalidLoginUrl(String),
     #[error("invalid email or password")]
     InvalidEmailOrPassword,
+    #[error("invalid request {0:?}")]
+    InvalidRequest(String),
     #[error("invalid email")]
     InvalidEmail,
     #[error("invalid Location")]
@@ -40,8 +46,6 @@ pub enum OAuthError {
     InvalidAccessToken,
     #[error("token expired")]
     TokenExpired,
-    #[error("Invalid MFA code")]
-    InvalidMFACode,
     #[error("MFA failed")]
     MFAFailed,
     #[error("MFA required")]

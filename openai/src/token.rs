@@ -1,12 +1,17 @@
 use std::{ops::Not, path::PathBuf, str::FromStr};
 
-use crate::{OAuthError, TokenResult, TokenStoreError};
+use crate::{OAuthError, TokenStoreError};
 use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
 use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
+
+use std::{collections::HashMap, sync::RwLock};
+
+use async_trait::async_trait;
+use serde::Serialize;
 
 pub const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\n\
 MIIC+zCCAeOgAwIBAgIJLlfMWYK8snRdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNVBAM\n\
@@ -29,10 +34,7 @@ afkEyGvifAMJFPwO78=\n\
 const OAUTH_PUBLIC_KEY_URL: &str = "https://auth0.openai.com/.well-known/jwks.json";
 const UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 
-use std::{collections::HashMap, sync::RwLock};
-
-use async_trait::async_trait;
-use serde::Serialize;
+pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 #[async_trait]
 pub trait AuthenticateTokenStore: Send + Sync {
@@ -66,7 +68,7 @@ impl AuthenticateToken {
         &self.access_token
     }
 
-    pub fn get_bearer_access_token(&self) -> String {
+    pub fn bearer_access_token(&self) -> String {
         format!("Bearer {}", &self.access_token)
     }
     pub fn refresh_token(&self) -> &str {

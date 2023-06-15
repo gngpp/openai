@@ -9,7 +9,7 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 
-use crate::{api::models::req::PostConversationBody, debug};
+use crate::api::models::req::PostConversationBody;
 
 use super::{
     models::{req, resp},
@@ -29,15 +29,17 @@ impl OpenGPT {
         U: DeserializeOwned,
     {
         let token = self.access_token.read().await;
-        let builder = match method {
+        let resp = match method {
             RequestMethod::GET => self.client.get(&url),
             RequestMethod::POST => self.client.post(&url),
             RequestMethod::PATCH => self.client.patch(&url),
             RequestMethod::PUT => self.client.put(&url),
             RequestMethod::DELETE => self.client.delete(&url),
         }
-        .bearer_auth(token);
-        self.request_handle(builder).await
+        .bearer_auth(token)
+        .send()
+        .await?;
+        self.response_handle(resp).await
     }
 
     async fn request_payload<T, U>(
@@ -51,32 +53,33 @@ impl OpenGPT {
         U: DeserializeOwned,
     {
         let token = self.access_token.read().await;
-        let builder = match method {
+        let resp = match method {
             RequestMethod::POST => self.client.post(&url),
             RequestMethod::PATCH => self.client.patch(&url),
             RequestMethod::PUT => self.client.put(&url),
             RequestMethod::DELETE => self.client.delete(&url),
-            _ => return Err(ApiError::FailedRequest("not supported method".to_owned())),
+            _ => {
+                return Err(ApiError::FailedRequestError(
+                    "not supported method".to_owned(),
+                ))
+            }
         }
         .bearer_auth(token)
-        .json(payload);
-        self.request_handle::<U>(builder).await
+        .json(payload)
+        .send()
+        .await?;
+        self.response_handle::<U>(resp).await
     }
 
-    async fn request_handle<U: DeserializeOwned>(
-        &self,
-        builder: reqwest::RequestBuilder,
-    ) -> ApiResult<U> {
-        let resp = builder.send().await?;
+    async fn response_handle<U: DeserializeOwned>(&self, resp: reqwest::Response) -> ApiResult<U> {
         let url = resp.url().clone();
         match resp.error_for_status_ref() {
             Ok(_) => Ok(resp
                 .json::<U>()
                 .await
-                .map_err(ApiError::ReqwestJsonDeserializeError)?),
+                .map_err(ApiError::JsonReqwestDeserializeError)?),
             Err(err) => {
-                let err_msg = resp.text().await?;
-                debug!("error: {}, url: {}", err_msg, url);
+                let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
                 match err.status() {
                         Some(
                             status_code
@@ -85,6 +88,9 @@ impl OpenGPT {
                             (StatusCode::UNAUTHORIZED
                             | StatusCode::REQUEST_TIMEOUT
                             | StatusCode::TOO_MANY_REQUESTS
+                            | StatusCode::BAD_REQUEST
+                            | StatusCode::PAYMENT_REQUIRED
+                            | StatusCode::FORBIDDEN
                             // 5xx
                             | StatusCode::INTERNAL_SERVER_ERROR
                             | StatusCode::BAD_GATEWAY
@@ -92,14 +98,17 @@ impl OpenGPT {
                             | StatusCode::GATEWAY_TIMEOUT),
                         ) => {
                             if status_code == StatusCode::UNAUTHORIZED {
-                                return Err(ApiError::BadAuthenticationError(err_msg));
+                                return Err(ApiError::BadAuthenticationError(err_msg))
+                            }
+                            if status_code == StatusCode::TOO_MANY_REQUESTS {
+                                return Err(ApiError::TooManyRequestsError(err_msg))
                             }
                             if status_code.is_client_error() {
-                                return Err(ApiError::BadRequest(err_msg))
+                                return Err(ApiError::BadRequestError(err_msg))
                             }
                             Err(ApiError::ServerError)
                         },
-                        _ => Err(ApiError::FailedRequest(err.to_string())),
+                        _ => Err(ApiError::FailedRequestError(err_msg)),
                     }
             }
         }
