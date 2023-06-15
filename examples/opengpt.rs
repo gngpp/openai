@@ -1,23 +1,28 @@
 use std::time;
 
 use futures_util::StreamExt;
-use openai::api::models::req::{self, PostConversationRequest};
+use openai::{
+    api::models::req::{self, PostConversationRequest},
+    oauth::OAuthAccountBuilder,
+};
 use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
-    let store = openai::token::FileStore::default();
-    let mut auth = openai::oauth::OAuthBuilder::builder()
-        .email(email)
-        .password(password)
-        .cache(true)
+    let mut auth = openai::oauth::OAuthClientBuilder::builder()
         .cookie_store(true)
-        .token_store(store)
         .client_timeout(std::time::Duration::from_secs(20))
         .build();
-    let token = auth.do_get_access_token().await?;
+    let token = auth
+        .do_access_token(
+            OAuthAccountBuilder::default()
+                .email(email)
+                .password(password)
+                .build()?,
+        )
+        .await?;
     let api = openai::api::opengpt::OpenGPTBuilder::builder()
         .access_token(token.access_token().to_owned())
         .cookie_store(false)

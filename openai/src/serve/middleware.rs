@@ -79,7 +79,7 @@ where
                 }
             })
         } else {
-            bad_response("AccessToken is required!".to_string(), request)
+            bad_response("access_token is required!".to_string(), request)
         }
     }
 }
