@@ -196,12 +196,12 @@ impl PostConversationResponse {
         self.message
             .content
             .parts
-            .iter()
+            .into_iter()
             .map(|c| {
                 if let Some(c) = crate::unescape::unescape(&c) {
                     return c;
                 }
-                c.to_string()
+                c
             })
             .collect()
     }
