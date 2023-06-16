@@ -193,7 +193,17 @@ impl PostConversationResponse {
     }
 
     pub fn message(self) -> Vec<String> {
-        self.message.content.parts
+        self.message
+            .content
+            .parts
+            .iter()
+            .map(|c| {
+                if let Some(c) = crate::unescape::unescape(&c) {
+                    return c;
+                }
+                c.to_string()
+            })
+            .collect()
     }
 
     pub fn message_id(&self) -> &str {

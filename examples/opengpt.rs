@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 
     let req = req::PostNextConversationBodyBuilder::default()
         .model(resp.models[0].slug.to_string())
-        .prompt("Golang Example".to_string())
+        .prompt("Rust 结构体字段已经有Arc包装了，结构体还需要使用Rc活Arc吗".to_string())
         .build()?;
 
     let mut resp: openai::api::PostConversationStreamResponse = api
@@ -51,25 +51,19 @@ async fn main() -> anyhow::Result<()> {
             conversation_id = Some(body.conversation_id.to_string())
         }
 
-        if end_turn.is_none() {
-            end_turn = body.end_turn()
-        }
-
         if let Some(end) = body.end_turn() {
             if end && message_id.is_none() {
                 message_id = Some(body.message_id().to_string())
             }
+            end_turn = body.end_turn()
         }
+
         let message = &body.message()[0];
         if message.starts_with(&previous_message) {
-            let new_chars: String = message.chars().skip(previous_message.len()).collect();
-            for ele in new_chars.as_bytes() {
-                out.write_u8(*ele).await?;
-            }
+            let new_chars = message.trim_start_matches(&previous_message);
+            out.write_all(new_chars.as_bytes()).await?;
         } else {
-            for ele in message.as_bytes() {
-                out.write_u8(*ele).await?;
-            }
+            out.write_all(message.as_bytes()).await?;
         }
         out.flush().await?;
         previous_message = message.to_string();
