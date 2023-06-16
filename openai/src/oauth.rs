@@ -569,7 +569,6 @@ impl OAuthClientBuilder {
         self
     }
 
-
     pub fn build(mut self) -> OAuthClient {
         self.oauth.client = self.builder.build().expect("ClientBuilder::build()");
         self.oauth
