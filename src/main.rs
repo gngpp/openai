@@ -38,7 +38,7 @@ enum SubCommands {
         /// TLS certificate file path
         #[clap(long, env = "OPENGPT_TLS_CERT", requires = "tls_key")]
         tls_cert: Option<PathBuf>,
-        /// TLS private key file path (EC)
+        /// TLS private key file path (EC/PKCS8/RSA)
         #[clap(long, env = "OPENGPT_TLS_KEY", requires = "tls_cert")]
         tls_key: Option<PathBuf>,
         /// Enable token bucket flow limitation

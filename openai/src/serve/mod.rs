@@ -196,7 +196,7 @@ impl Launcher {
         tls_cert: PathBuf,
         tls_key: PathBuf,
     ) -> anyhow::Result<ServerConfig> {
-        use rustls_pemfile::{certs, ec_private_keys};
+        use rustls_pemfile::{certs, ec_private_keys, pkcs8_private_keys, rsa_private_keys};
 
         // init server config builder with safe defaults
         let config = ServerConfig::builder()
@@ -209,17 +209,26 @@ impl Launcher {
 
         // convert files to key/cert objects
         let cert_chain = certs(cert_file)?.into_iter().map(Certificate).collect();
-        let mut keys: Vec<PrivateKey> = ec_private_keys(key_file)?
-            .into_iter()
-            .map(PrivateKey)
-            .collect();
+
+        let keys_list = vec![
+            ec_private_keys(key_file)?,
+            pkcs8_private_keys(key_file)?,
+            rsa_private_keys(key_file)?,
+        ];
+
+        let keys = keys_list.into_iter().find(|k| !k.is_empty());
 
         // exit if no keys could be parsed
-        if keys.is_empty() {
-            anyhow::bail!("Could not locate PKCS 8 private keys.")
+        match keys {
+            Some(keys) => Ok(config.with_single_cert(
+                cert_chain,
+                keys.into_iter()
+                    .map(PrivateKey)
+                    .collect::<Vec<PrivateKey>>()
+                    .remove(0),
+            )?),
+            None => anyhow::bail!("Could not locate PKCS 8 private keys."),
         }
-
-        Ok(config.with_single_cert(cert_chain, keys.remove(0))?)
     }
 }
 
