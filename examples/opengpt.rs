@@ -2,7 +2,7 @@ use std::time;
 
 use futures_util::StreamExt;
 use openai::{
-    api::models::req::{self, PostConversationRequest},
+    api::models::req::{self, PostConvoRequest},
     oauth::OAuthAccountBuilder,
 };
 use tokio::io::AsyncWriteExt;
@@ -31,31 +31,37 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     let resp = api.get_models().await?;
+    let model = resp.real_models();
 
-    let req = req::PostNextConversationBodyBuilder::default()
-        .model(resp.models[0].slug.to_string())
-        .prompt("Rust 结构体字段已经有Arc包装了，结构体还需要使用Rc活Arc吗".to_string())
+    let parent_message_id = uuid::Uuid::new_v4().to_string();
+    let message_id = uuid::Uuid::new_v4().to_string();
+    let req = req::PostNextConvoRequestBuilder::default()
+        .model(model[0])
+        .message_id(&message_id)
+        .parent_message_id(&parent_message_id)
+        .prompt("Zig Example")
         .build()?;
 
-    let mut resp: openai::api::PostConversationStreamResponse = api
-        .post_conversation(PostConversationRequest::Next(req))
+    let mut resp: openai::api::PostConvoStreamResponse = api
+        .post_conversation(PostConvoRequest::try_from(req)?)
         .await?;
 
     let mut previous_message = String::new();
     let mut out: tokio::io::Stdout = tokio::io::stdout();
     let mut conversation_id: Option<String> = None;
-    let mut message_id: Option<String> = None;
+    let mut end_message_id: Option<String> = None;
     let mut end_turn: Option<bool> = None;
     while let Some(body) = resp.next().await {
         if conversation_id.is_none() {
             conversation_id = Some(body.conversation_id.to_string())
         }
 
+        if end_message_id.is_none() {
+            end_message_id = Some(body.message_id().to_string())
+        }
+
         if let Some(end) = body.end_turn() {
-            if end && message_id.is_none() {
-                message_id = Some(body.message_id().to_string())
-            }
-            end_turn = body.end_turn()
+            end_turn = Some(end)
         }
 
         let message = &body.message()[0];
@@ -69,22 +75,20 @@ async fn main() -> anyhow::Result<()> {
         previous_message = message.to_string();
     }
 
-    println!("\nconversation end/stop");
+    let conversation_id = conversation_id.unwrap_or_default();
+    let end_message_id = end_message_id.unwrap_or_default();
 
     if let Some(end) = end_turn {
         if end {
-            let conversation_id = conversation_id.unwrap_or_default();
-            let message_id = message_id.unwrap_or_default();
-
-            let req = req::PostConversationGenTitleRequestBuilder::default()
-                .conversation_id(conversation_id.as_ref())
-                .message_id(message_id.as_ref())
+            let req = req::PostConvoGenTitleRequestBuilder::default()
+                .conversation_id(&conversation_id)
+                .message_id(&end_message_id)
                 .build()?;
             let resp = api.post_conversation_gen_title(req).await?;
             println!("\n{:?}", resp);
 
             // get conversation
-            let req = req::GetConversationRequestBuilder::default()
+            let req = req::GetConvoRequestBuilder::default()
                 .conversation_id(conversation_id.as_ref())
                 .build()?;
             let resp = api.get_conversation(req).await?;
@@ -92,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
             // // clart conversation
-            let req = req::PatchConversationRequestBuilder::default()
+            let req = req::PatchConvoRequestBuilder::default()
                 .conversation_id(conversation_id.as_ref())
                 .is_visible(false)
                 .build()?;
@@ -100,10 +104,31 @@ async fn main() -> anyhow::Result<()> {
             println!("{:?}", resp);
             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         }
+    } else {
+        let req = req::PostContinueConvoRequestBuilder::default()
+            .model(model[0])
+            .conversation_id(conversation_id.as_ref())
+            .parent_message_id(end_message_id.as_ref())
+            .build()?;
+
+        let mut resp = api
+            .post_conversation(PostConvoRequest::try_from(req)?)
+            .await?;
+        while let Some(body) = resp.next().await {
+            let message = &body.message()[0];
+            if message.starts_with(&previous_message) {
+                let new_chars = message.trim_start_matches(&previous_message);
+                out.write_all(new_chars.as_bytes()).await?;
+            } else {
+                out.write_all(message.as_bytes()).await?;
+            }
+            out.flush().await?;
+            previous_message = message.to_string();
+        }
     }
 
     // get conversation list
-    // let req = req::GetConversationRequestBuilder::default()
+    // let req = req::GetConvoRequestBuilder::default()
     //     .offset(0)
     //     .limit(20)
     //     .build()?;
@@ -112,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     // // clart conversation list
-    // let req = req::PatchConversationRequestBuilder::default()
+    // let req = req::PatchConvoRequestBuilder::default()
     //     .is_visible(false)
     //     .build()?;
     // let resp = api.patch_conversations(req).await?;
@@ -120,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
     // tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     // rename conversation title
-    // let req = req::PatchConversationRequestBuilder::default()
+    // let req = req::PatchConvoRequestBuilder::default()
     //     .conversation_id("78feb7c4-a864-4606-8665-cdb7a1cf4f6d".to_owned())
     //     .title("fuck".to_owned())
     //     .build()?;

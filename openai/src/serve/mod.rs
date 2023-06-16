@@ -305,10 +305,7 @@ async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) 
 }
 
 #[get("/conversations")]
-async fn get_conversations(
-    req: HttpRequest,
-    param: web::Query<ConversationsQuery>,
-) -> impl Responder {
+async fn get_conversations(req: HttpRequest, param: web::Query<ConvosQuery>) -> impl Responder {
     let param = param.into_inner();
     match client()
         .get(format!(
@@ -435,16 +432,16 @@ fn response_handle(resp: reqwest::Response) -> HttpResponse {
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-struct ConversationsQuery {
-    #[serde(default = "ConversationsQuery::default_offset")]
+struct ConvosQuery {
+    #[serde(default = "ConvosQuery::default_offset")]
     offset: u32,
-    #[serde(default = "ConversationsQuery::default_limit")]
+    #[serde(default = "ConvosQuery::default_limit")]
     limit: u32,
-    #[serde(default = "ConversationsQuery::default_order")]
+    #[serde(default = "ConvosQuery::default_order")]
     order: String,
 }
 
-impl ConversationsQuery {
+impl ConvosQuery {
     fn default_offset() -> u32 {
         0
     }

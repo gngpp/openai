@@ -9,12 +9,9 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 
-use crate::api::models::req::PostConversationBody;
-
 use super::{
     models::{req, resp},
-    ApiError, ApiResult, PostConversationStreamResponse, RequestMethod, HEADER_UA,
-    URL_CHATGPT_BASE,
+    ApiError, ApiResult, PostConvoStreamResponse, RequestMethod, HEADER_UA, URL_CHATGPT_BASE,
 };
 
 pub struct OpenGPT {
@@ -131,11 +128,11 @@ impl OpenGPT {
 
     pub async fn get_conversation<'a>(
         &self,
-        req: req::GetConversationRequest<'a>,
-    ) -> ApiResult<resp::GetConversationResonse> {
+        req: req::GetConvoRequest<'a>,
+    ) -> ApiResult<resp::GetConvoResonse> {
         match req.conversation_id {
             Some(conversation_id) => {
-                self.request::<resp::GetConversationResonse>(
+                self.request::<resp::GetConvoResonse>(
                     format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
                     RequestMethod::GET,
                 )
@@ -147,9 +144,9 @@ impl OpenGPT {
 
     pub async fn get_conversations<'a>(
         &self,
-        req: req::GetConversationRequest<'a>,
-    ) -> ApiResult<resp::GetConversationsResponse> {
-        self.request::<resp::GetConversationsResponse>(
+        req: req::GetConvoRequest<'a>,
+    ) -> ApiResult<resp::GetConvosResponse> {
+        self.request::<resp::GetConvosResponse>(
             format!(
                 "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}&order=updated",
                 req.offset, req.limit
@@ -159,36 +156,32 @@ impl OpenGPT {
         .await
     }
 
-    pub async fn post_conversation(
+    pub async fn post_conversation<'a>(
         &self,
-        req: req::PostConversationRequest,
-    ) -> anyhow::Result<PostConversationStreamResponse> {
-        let payload = PostConversationBody::try_from(req)?;
+        req: req::PostConvoRequest<'a>,
+    ) -> anyhow::Result<PostConvoStreamResponse> {
         let url = format!("{URL_CHATGPT_BASE}/conversation");
         let resp = self
             .client
             .post(url)
             .bearer_auth(&self.access_token.read().await)
-            .json(&payload)
+            .json(&req)
             .send()
             .await?;
 
-        Ok(PostConversationStreamResponse::new(Box::pin(
-            resp.bytes_stream(),
-        )))
+        Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream())))
     }
 
-    pub async fn post_conversation_completions(
+    pub async fn post_conversation_completions<'a>(
         &self,
-        req: req::PostConversationRequest,
-    ) -> ApiResult<Vec<resp::PostConversationResponse>> {
-        let payload = PostConversationBody::try_from(req)?;
+        req: req::PostConvoRequest<'a>,
+    ) -> ApiResult<Vec<resp::PostConvoResponse>> {
         let url = format!("{URL_CHATGPT_BASE}/conversation");
         let resp = self
             .client
             .post(url)
             .bearer_auth(&self.access_token.read().await)
-            .json(&payload)
+            .json(&req)
             .send()
             .await?;
 
@@ -202,7 +195,7 @@ impl OpenGPT {
                 let chunks: Vec<&str> = body.lines().filter(|s| !s.is_empty()).collect();
                 for ele in chunks {
                     let body = ele.trim_start_matches("data: ").trim();
-                    let res = serde_json::from_str::<resp::PostConversationResponse>(body)
+                    let res = serde_json::from_str::<resp::PostConvoResponse>(body)
                         .map_err(ApiError::SerdeDeserializeError)?;
                     v.push(res);
                 }
@@ -216,8 +209,8 @@ impl OpenGPT {
 
     pub async fn patch_conversation<'a>(
         &self,
-        req: req::PatchConversationRequest<'a>,
-    ) -> ApiResult<resp::PatchConversationResponse> {
+        req: req::PatchConvoRequest<'a>,
+    ) -> ApiResult<resp::PatchConvoResponse> {
         match &req.conversation_id {
             Some(conversation_id) => {
                 self.request_payload(
@@ -233,8 +226,8 @@ impl OpenGPT {
 
     pub async fn patch_conversations<'a>(
         &self,
-        req: req::PatchConversationRequest<'a>,
-    ) -> ApiResult<resp::PatchConversationResponse> {
+        req: req::PatchConvoRequest<'a>,
+    ) -> ApiResult<resp::PatchConvoResponse> {
         self.request_payload(
             format!("{URL_CHATGPT_BASE}/conversations"),
             RequestMethod::PATCH,
@@ -245,8 +238,8 @@ impl OpenGPT {
 
     pub async fn post_conversation_gen_title<'a>(
         &self,
-        req: req::PostConversationGenTitleRequest<'a>,
-    ) -> ApiResult<resp::PostConversationGenTitleResponse> {
+        req: req::PostConvoGenTitleRequest<'a>,
+    ) -> ApiResult<resp::PostConvoGenTitleResponse> {
         self.request_payload(
             format!(
                 "{URL_CHATGPT_BASE}/conversation/gen_title/{}",
