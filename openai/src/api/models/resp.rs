@@ -69,13 +69,19 @@ pub struct GetModelsResponse {
     pub categories: Vec<ModelsCategories>,
 }
 
+impl GetModelsResponse {
+    pub fn real_models(&self) -> Vec<&str> {
+        self.models.iter().map(|v| v.slug.as_str()).collect()
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct Mapping {
-    id: String,
-    parent: Option<String>,
-    message: Option<Message>,
-    children: Vec<String>,
+    pub id: String,
+    pub parent: Option<String>,
+    pub message: Option<Message>,
+    pub children: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -114,7 +120,7 @@ pub struct FinishDetails {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ConversationItems {
+pub struct ConvoItems {
     pub id: String,
     pub title: String,
     pub create_time: String,
@@ -124,8 +130,8 @@ pub struct ConversationItems {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct GetConversationsResponse {
-    pub items: Vec<ConversationItems>,
+pub struct GetConvosResponse {
+    pub items: Vec<ConvoItems>,
     pub total: i64,
     pub limit: i64,
     pub offset: i64,
@@ -133,7 +139,7 @@ pub struct GetConversationsResponse {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct GetConversationResonse {
+pub struct GetConvoResonse {
     pub title: String,
     pub create_time: f64,
     pub update_time: f64,
@@ -142,13 +148,13 @@ pub struct GetConversationResonse {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConversationContent {
+pub struct PostConvoContent {
     pub content_type: String,
     pub parts: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConversationMessage {
+pub struct PostConvoMessage {
     pub id: String,
     pub author: Author,
     pub create_time: f64,
@@ -157,25 +163,25 @@ pub struct PostConversationMessage {
     pub status: String,
     pub end_turn: bool,
     pub weight: i64,
-    pub metadata: PostConversationMetadata,
+    pub metadata: PostConvoMetadata,
     pub recipient: String,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConversationMetadata {
+pub struct PostConvoMetadata {
     pub message_type: String,
     pub model_slug: String,
     pub finish_details: FinishDetails,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConversationResponse {
+pub struct PostConvoResponse {
     pub message: Message,
     pub conversation_id: String,
     pub error: Option<String>,
 }
 
-impl PostConversationResponse {
+impl PostConvoResponse {
     pub fn end_turn(&self) -> Option<bool> {
         self.message.end_turn
     }
@@ -196,12 +202,12 @@ impl PostConversationResponse {
         self.message
             .content
             .parts
-            .iter()
+            .into_iter()
             .map(|c| {
                 if let Some(c) = crate::unescape::unescape(&c) {
                     return c;
                 }
-                c.to_string()
+                c
             })
             .collect()
     }
@@ -216,19 +222,19 @@ impl PostConversationResponse {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PatchConversationResponse {
+pub struct PatchConvoResponse {
     #[serde(default)]
     pub success: bool,
 }
 
-impl Success for PatchConversationResponse {
+impl Success for PatchConvoResponse {
     fn ok(&self) -> bool {
         self.success
     }
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConversationGenTitleResponse {
+pub struct PostConvoGenTitleResponse {
     pub title: Option<String>,
     pub message: Option<String>,
 }

@@ -7,7 +7,7 @@ use futures_util::Stream;
 
 use crate::{debug, warn};
 
-use self::models::resp::PostConversationResponse;
+use self::models::resp::PostConvoResponse;
 
 pub mod chatgpt;
 pub mod models;
@@ -71,12 +71,12 @@ pub trait Success {
     fn ok(&self) -> bool;
 }
 
-pub struct PostConversationStreamResponse {
+pub struct PostConvoStreamResponse {
     response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
     first_chunk: bool,
 }
 
-impl PostConversationStreamResponse {
+impl PostConvoStreamResponse {
     pub fn new(
         response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
     ) -> Self {
@@ -87,8 +87,8 @@ impl PostConversationStreamResponse {
     }
 }
 
-impl Stream for PostConversationStreamResponse {
-    type Item = PostConversationResponse;
+impl Stream for PostConvoStreamResponse {
+    type Item = PostConvoResponse;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {

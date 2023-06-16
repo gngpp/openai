@@ -4,9 +4,9 @@ use serde::Serialize;
 use super::{Author, Role};
 
 #[derive(Serialize, Builder, Clone)]
-pub struct Content {
+pub struct Content<'a> {
     content_type: ContentText,
-    parts: Vec<String>,
+    parts: Vec<&'a str>,
 }
 
 #[derive(Serialize, Clone)]
@@ -16,10 +16,10 @@ pub enum ContentText {
 }
 
 #[derive(Serialize, Builder, Clone)]
-pub struct Messages {
-    id: Option<String>,
+pub struct Messages<'a> {
+    id: Option<&'a str>,
     author: Author,
-    content: Content,
+    content: Content<'a>,
 }
 
 #[derive(Clone, Serialize)]
@@ -31,33 +31,7 @@ pub enum Action {
 }
 
 #[derive(Serialize, Builder)]
-pub struct PostConversationBody {
-    action: Action,
-    messages: Vec<Messages>,
-    parent_message_id: String,
-    model: String,
-    #[builder(default = "-480")]
-    timezone_offset_min: i64,
-    #[builder(setter(into, strip_option), default)]
-    conversation_id: Option<String>,
-    #[builder(default = "false")]
-    history_and_training_disabled: bool,
-}
-
-impl TryFrom<PostConversationRequest> for PostConversationBody {
-    type Error = anyhow::Error;
-
-    fn try_from(value: PostConversationRequest) -> Result<Self, Self::Error> {
-        match value {
-            PostConversationRequest::Next(v) => v.try_into(),
-            PostConversationRequest::Variant(v) => v.try_into(),
-            PostConversationRequest::Continue(v) => v.try_into(),
-        }
-    }
-}
-
-#[derive(Serialize, Builder)]
-pub struct PatchConversationRequest<'a> {
+pub struct PatchConvoRequest<'a> {
     #[builder(setter(into, strip_option), default)]
     pub conversation_id: Option<&'a str>,
     #[builder(setter(into, strip_option), default)]
@@ -67,7 +41,7 @@ pub struct PatchConversationRequest<'a> {
 }
 
 #[derive(Builder)]
-pub struct GetConversationRequest<'a> {
+pub struct GetConvoRequest<'a> {
     #[builder(setter(into, strip_option))]
     pub conversation_id: Option<&'a str>,
     #[builder(default = "0")]
@@ -77,7 +51,7 @@ pub struct GetConversationRequest<'a> {
 }
 
 #[derive(Serialize, Builder)]
-pub struct PostConversationGenTitleRequest<'a> {
+pub struct PostConvoGenTitleRequest<'a> {
     message_id: &'a str,
     #[serde(skip_serializing)]
     pub conversation_id: &'a str,
@@ -105,93 +79,119 @@ impl ToString for Rating {
     }
 }
 
-pub enum PostConversationRequest {
-    Next(PostNextConversationBody),
-    Variant(PostVaraintConversationBody),
-    Continue(PostContinueConversationBody),
-}
-
 #[derive(Serialize, Builder)]
-pub struct PostNextConversationBody {
-    model: String,
-    prompt: String,
+pub struct PostConvoRequest<'a> {
+    action: Action,
+    messages: Vec<Messages<'a>>,
+    parent_message_id: &'a str,
+    model: &'a str,
+    #[builder(default = "-480")]
+    timezone_offset_min: i64,
+    #[builder(setter(into), default)]
+    conversation_id: Option<&'a str>,
+    #[builder(default = "false")]
+    history_and_training_disabled: bool,
 }
 
-impl TryInto<PostConversationBody> for PostNextConversationBody {
+impl<'a> TryFrom<PostNextConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
-    fn try_into(self) -> Result<PostConversationBody, Self::Error> {
-        let message_id = uuid::Uuid::new_v4();
-        let parent_message_id = uuid::Uuid::new_v4();
-        let body = PostConversationBodyBuilder::default()
+    fn try_from(value: PostNextConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let body = PostConvoRequestBuilder::default()
             .action(Action::Next)
-            .parent_message_id(parent_message_id.to_string())
+            .parent_message_id(value.parent_message_id)
             .messages(vec![MessagesBuilder::default()
-                .id(Some(message_id.to_string()))
+                .id(Some(value.message_id))
                 .author(Author { role: Role::User })
                 .content(
                     ContentBuilder::default()
                         .content_type(ContentText::Text)
-                        .parts(vec![self.prompt])
+                        .parts(vec![value.prompt])
                         .build()?,
                 )
                 .build()?])
-            .model(self.model)
+            .model(value.model)
+            .conversation_id(value.conversation_id)
             .build()?;
+
         Ok(body)
     }
 }
 
-#[derive(Serialize, Builder)]
-pub struct PostContinueConversationBody {
-    model: String,
-    parent_message_id: String,
-    conversation_id: String,
-}
-
-impl TryInto<PostConversationBody> for PostContinueConversationBody {
+impl<'a> TryFrom<PostContinueConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
-    fn try_into(self) -> Result<PostConversationBody, Self::Error> {
-        let body = PostConversationBodyBuilder::default()
+    fn try_from(value: PostContinueConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let body = PostConvoRequestBuilder::default()
             .action(Action::Continue)
-            .conversation_id(self.conversation_id)
-            .parent_message_id(self.parent_message_id)
-            .model(self.model)
+            .conversation_id(value.conversation_id)
+            .parent_message_id(value.parent_message_id)
+            .model(value.model)
             .build()?;
 
+        Ok(body)
+    }
+}
+
+impl<'a> TryFrom<PostVaraintConvoRequest<'a>> for PostConvoRequest<'a> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: PostVaraintConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let body = PostConvoRequestBuilder::default()
+            .action(Action::Variant)
+            .conversation_id(value.conversation_id)
+            .parent_message_id(value.parent_message_id)
+            .messages(vec![MessagesBuilder::default()
+                .id(Some(value.message_id))
+                .author(Author { role: Role::User })
+                .content(
+                    ContentBuilder::default()
+                        .content_type(ContentText::Text)
+                        .parts(vec![value.prompt])
+                        .build()?,
+                )
+                .build()?])
+            .model(value.model)
+            .build()?;
         Ok(body)
     }
 }
 
 #[derive(Serialize, Builder)]
-pub struct PostVaraintConversationBody {
-    model: String,
-    prompt: String,
-    message_id: String,
-    parent_message_id: String,
-    conversation_id: String,
+pub struct PostNextConvoRequest<'a> {
+    /// The conversation uses a model that usually remains the same throughout the conversation
+    model: &'a str,
+    /// What to ask.
+    prompt: &'a str,
+    /// The message ID, usually generated using str(uuid.uuid4())
+    message_id: &'a str,
+    /// The parent message ID must also be generated for the first time. Then get the message ID of the previous reply.
+    parent_message_id: &'a str,
+    /// The first conversation is off the record. It can be obtained when ChatGPT replies.
+    #[builder(setter(into, strip_option), default)]
+    conversation_id: Option<&'a str>,
 }
 
-impl TryInto<PostConversationBody> for PostVaraintConversationBody {
-    type Error = anyhow::Error;
+#[derive(Serialize, Builder)]
+pub struct PostContinueConvoRequest<'a> {
+    /// The conversation uses a model that usually remains the same throughout the conversation
+    model: &'a str,
+    /// Parent message ID, the message ID of the last ChatGPT reply.
+    parent_message_id: &'a str,
+    /// ID of a session. conversation_id Session ID.
+    conversation_id: &'a str,
+}
 
-    fn try_into(self) -> Result<PostConversationBody, Self::Error> {
-        let body = PostConversationBodyBuilder::default()
-            .action(Action::Variant)
-            .parent_message_id(self.parent_message_id)
-            .messages(vec![MessagesBuilder::default()
-                .id(Some(self.message_id))
-                .author(Author { role: Role::User })
-                .content(
-                    ContentBuilder::default()
-                        .content_type(ContentText::Text)
-                        .parts(vec![self.prompt])
-                        .build()?,
-                )
-                .build()?])
-            .model(self.model)
-            .build()?;
-        Ok(body)
-    }
+#[derive(Serialize, Builder)]
+pub struct PostVaraintConvoRequest<'a> {
+    /// The conversation uses a model that usually remains the same throughout the conversation
+    model: &'a str,
+    /// What to ask.
+    prompt: &'a str,
+    /// ID of the message sent by the previous user.
+    message_id: &'a str,
+    /// ID of the parent message sent by the previous user.
+    parent_message_id: &'a str,
+    /// The session ID must be passed on this interface.
+    conversation_id: &'a str,
 }

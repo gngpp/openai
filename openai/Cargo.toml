@@ -31,13 +31,7 @@ actix-web = { version = "4", features = ["rustls"] }
 rustls = "0.20.8"
 rustls-pemfile = "1.0.2"
 
-[dependencies.uuid]
-version = "1.3.3"
-features = [
-    "v4",                # Lets you generate random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
-    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
-]
+
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched"}

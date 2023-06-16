@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) static ONCE_INIT: Once = Once::new();
+static ONCE_INIT: Once = Once::new();
 
 fn initialize_log(s: &str) -> anyhow::Result<bool> {
     let debug = s.parse::<bool>()?;
