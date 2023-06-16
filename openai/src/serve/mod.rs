@@ -13,6 +13,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Once;
+use std::time::Duration;
 
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::net::IpAddr;
@@ -50,6 +51,8 @@ pub struct Launcher {
     port: u16,
     /// Machine worker pool
     workers: usize,
+    /// TCP keepalive (second)
+    tcp_keepalive: Duration,
     /// TLS keypair
     tls_keypair: Option<(PathBuf, PathBuf)>,
     /// Enable token bucket flow limitation
@@ -73,6 +76,8 @@ impl Launcher {
         let client = reqwest::ClientBuilder::new()
             .chrome_builder(reqwest::browser::ChromeVersion::V105)
             .default_headers(headers)
+            .tcp_keepalive(Some(self.tcp_keepalive))
+            .pool_max_idle_per_host(self.workers)
             .cookie_store(false)
             .build()?;
 
@@ -117,7 +122,7 @@ impl Launcher {
                             .service(do_revoke_token),
                     )
             })
-            .keep_alive(None)
+            .keep_alive(self.tcp_keepalive)
             .workers(self.workers);
             match ctls_keypaird {
                 Some(keypair) => {
@@ -163,7 +168,7 @@ impl Launcher {
                             .service(do_revoke_token),
                     )
             })
-            .keep_alive(None)
+            .keep_alive(self.tcp_keepalive)
             .workers(self.workers);
             match self.tls_keypair {
                 Some(keypair) => {

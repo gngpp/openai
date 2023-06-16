@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use openai::serve::LauncherBuilder;
-use std::{io::Write, path::PathBuf, sync::Once};
+use std::{io::Write, path::PathBuf, sync::Once, time::Duration};
 
 pub mod account;
 pub mod prompt;
@@ -30,7 +30,10 @@ enum SubCommands {
         port: Option<u16>,
         /// Server worker-pool size (Recommended number of CPU cores)
         #[clap(short = 'W', long, env = "OPENGPT_WORKERS", default_value = "1")]
-        workers: Option<usize>,
+        workers: usize,
+        /// TCP keepalive (second)
+        #[clap(long, env = "OPENGPT_TCP_KEEPALIVE", default_value = "5")]
+        tcp_keepalive: usize,
         /// TLS certificate file path
         #[clap(long, env = "OPENGPT_TLS_CERT", requires = "tls_key")]
         tls_cert: Option<PathBuf>,
@@ -100,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
                 host,
                 port,
                 workers,
+                tcp_keepalive,
                 tls_cert,
                 tls_key,
                 tb_enable,
@@ -112,7 +116,8 @@ async fn main() -> anyhow::Result<()> {
                     .host(host.unwrap())
                     .port(port.unwrap())
                     .tls_keypair(None)
-                    .workers(workers.unwrap())
+                    .tcp_keepalive(Duration::from_secs(tcp_keepalive as u64))
+                    .workers(workers)
                     .tb_enable(tb_enable)
                     .tb_capacity(tb_capacity)
                     .tb_fill_rate(tb_fill_rate)
