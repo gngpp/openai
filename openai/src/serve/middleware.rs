@@ -71,9 +71,10 @@ where
             Box::pin(async move {
                 match crate::token::verify_access_token_for_u8(token.as_bytes()).await {
                     Ok(_) => {
-                        let res = svc.call(request);
                         // forwarded responses map to "left" body
-                        res.await.map(ServiceResponse::map_into_left_body)
+                        svc.call(request)
+                            .await
+                            .map(ServiceResponse::map_into_left_body)
                     }
                     Err(err) => bad_response(err.to_string(), request).await,
                 }
@@ -162,9 +163,10 @@ where
                 Ok(addr) => {
                     match tb.acquire(addr).await {
                         true => {
-                            let res = svc.call(request);
                             // forwarded responses map to "left" body
-                            res.await.map(ServiceResponse::map_into_left_body)
+                            svc.call(request)
+                                .await
+                                .map(ServiceResponse::map_into_left_body)
                         }
                         false => bad_response("Too Many Requests".to_string(), request).await,
                     }
