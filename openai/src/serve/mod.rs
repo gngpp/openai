@@ -196,7 +196,7 @@ impl Launcher {
         tls_cert: PathBuf,
         tls_key: PathBuf,
     ) -> anyhow::Result<ServerConfig> {
-        use rustls_pemfile::{certs, pkcs8_private_keys};
+        use rustls_pemfile::{certs, ec_private_keys};
 
         // init server config builder with safe defaults
         let config = ServerConfig::builder()
@@ -209,7 +209,7 @@ impl Launcher {
 
         // convert files to key/cert objects
         let cert_chain = certs(cert_file)?.into_iter().map(Certificate).collect();
-        let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)?
+        let mut keys: Vec<PrivateKey> = ec_private_keys(key_file)?
             .into_iter()
             .map(PrivateKey)
             .collect();
