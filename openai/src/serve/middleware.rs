@@ -56,10 +56,10 @@ where
     fn call(&self, request: ServiceRequest) -> Self::Future {
         let authorization = request.headers().get(header::AUTHORIZATION);
 
-        let bad_response = |msg: String, request: ServiceRequest| -> Self::Future {
+        let bad_response = |msg: &str, request: ServiceRequest| -> Self::Future {
             let (req, _pl) = request.into_parts();
             let resp = HttpResponse::Unauthorized()
-                .json(MiddlewareMessage { msg: &msg })
+                .json(MiddlewareMessage { msg })
                 // constructed responses map to "right" body
                 .map_into_right_body();
             Box::pin(async { Ok(ServiceResponse::new(req, resp)) })
@@ -76,11 +76,11 @@ where
                             .await
                             .map(ServiceResponse::map_into_left_body)
                     }
-                    Err(err) => bad_response(err.to_string(), request).await,
+                    Err(err) => bad_response(&err.to_string(), request).await,
                 }
             })
         } else {
-            bad_response("access_token is required!".to_string(), request)
+            bad_response("access_token is required!", request)
         }
     }
 }
@@ -140,10 +140,10 @@ where
     dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
-        let bad_response = |msg: String, request: ServiceRequest| -> Self::Future {
+        let bad_response = |msg: &str, request: ServiceRequest| -> Self::Future {
             let (req, _pl) = request.into_parts();
             let resp = HttpResponse::TooManyRequests()
-                .json(MiddlewareMessage { msg: &msg })
+                .json(MiddlewareMessage { msg })
                 // constructed responses map to "right" body
                 .map_into_right_body();
             Box::pin(async { Ok(ServiceResponse::new(req, resp)) })
@@ -168,10 +168,10 @@ where
                                 .await
                                 .map(ServiceResponse::map_into_left_body)
                         }
-                        false => bad_response("Too Many Requests".to_string(), request).await,
+                        false => bad_response("Too Many Requests", request).await,
                     }
                 }
-                Err(err) => bad_response(err.to_string(), request).await,
+                Err(err) => bad_response(&err.to_string(), request).await,
             }
         })
     }
