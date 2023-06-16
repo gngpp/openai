@@ -558,6 +558,18 @@ impl OAuthClientBuilder {
         self
     }
 
+    /// Set that all sockets have `SO_KEEPALIVE` set with the supplied duration.
+    ///
+    /// If `None`, the option will not be set.
+    pub fn tcp_keepalive<D>(mut self, val: D) -> Self
+    where
+        D: Into<Option<Duration>>,
+    {
+        self.builder = self.builder.tcp_keepalive(val);
+        self
+    }
+
+
     pub fn build(mut self) -> OAuthClient {
         self.oauth.client = self.builder.build().expect("ClientBuilder::build()");
         self.oauth
@@ -566,7 +578,6 @@ impl OAuthClientBuilder {
     pub fn builder() -> OAuthClientBuilder {
         let client_builder = Client::builder()
             .user_agent(HEADER_UA)
-            .pool_max_idle_per_host(20)
             .redirect(Policy::custom(|attempt| {
                 if attempt
                     .url()
