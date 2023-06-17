@@ -15,9 +15,9 @@ use std::io::BufReader;
 use std::sync::Once;
 use std::time::Duration;
 
-use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::net::IpAddr;
 use std::path::PathBuf;
+use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;

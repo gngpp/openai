@@ -19,19 +19,17 @@ serde = "1.0.163"
 regex = "1.8.2"
 async-recursion = "1.0.4"
 url = "2.3.1"
-sha2 = "0.10.6"
 base64 = "0.21.2"
 rand = "0.8.5"
-jsonwebtokens = "1"
 async-trait = "0.1.68"
 derive_builder = "0.12.0"
 futures-util = "0.3.28"
 bytes = { version = "1.4.0", default-features = false }
-actix-web = { version = "4", features = ["rustls"] }
-rustls = "0.20.8"
-rustls-pemfile = "1.0.2"
-
-
+jsonwebtokens = "1"
+sha2 = "0.10.6"
+actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
+rustls-pemfile = { version = "1.0.2", optional = true }
+tokio-rustls = { version = "0.23.4", optional = true }
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched"}
@@ -39,7 +37,7 @@ h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
 [features]
 default = ["serve", "limit"]
-serve = []
+serve = ["actix-web", "rustls-pemfile", "tokio-rustls"]
 limit = []
 remote-token = []
 
