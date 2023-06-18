@@ -41,8 +41,13 @@ enum SubCommands {
         /// TLS private key file path (EC/PKCS8/RSA)
         #[clap(long, env = "OPENGPT_TLS_KEY", requires = "tls_cert")]
         tls_key: Option<PathBuf>,
+        /// Enable url signature (signature secret key)
+        #[clap(short = 'S', long, env = "OPENGPT_SIGNATURE")]
+        #[cfg(feature = "sign")]
+        sign_secret_key: Option<String>,
         /// Enable token bucket flow limitation
         #[clap(short = 'T', long, env = "OPENGPT_TB_ENABLE")]
+        #[cfg(feature = "limit")]
         tb_enable: bool,
         /// Token bucket capacity
         #[clap(
@@ -51,6 +56,7 @@ enum SubCommands {
             default_value = "60",
             requires = "tb_enable"
         )]
+        #[cfg(feature = "limit")]
         tb_capacity: u32,
         /// Token bucket fill rate
         #[clap(
@@ -59,6 +65,7 @@ enum SubCommands {
             default_value = "1",
             requires = "tb_enable"
         )]
+        #[cfg(feature = "limit")]
         tb_fill_rate: u32,
         /// Token bucket expired (second)
         #[clap(
@@ -67,6 +74,7 @@ enum SubCommands {
             default_value = "86400",
             requires = "tb_enable"
         )]
+        #[cfg(feature = "limit")]
         tb_expired: u32,
     },
     /// Account configuration settings
@@ -107,22 +115,34 @@ async fn main() -> anyhow::Result<()> {
                 tcp_keepalive,
                 tls_cert,
                 tls_key,
+                #[cfg(feature = "sign")]
+                sign_secret_key,
+                #[cfg(feature = "limit")]
                 tb_enable,
+                #[cfg(feature = "limit")]
                 tb_capacity,
+                #[cfg(feature = "limit")]
                 tb_fill_rate,
+                #[cfg(feature = "limit")]
                 tb_expired,
             } => {
                 let mut builder = LauncherBuilder::default();
-                let mut builder = builder
+                let builder = builder
                     .host(host.unwrap())
                     .port(port.unwrap())
                     .tls_keypair(None)
                     .tcp_keepalive(Duration::from_secs(tcp_keepalive as u64))
-                    .workers(workers)
+                    .workers(workers);
+
+                #[cfg(feature = "limit")]
+                let builder = builder
                     .tb_enable(tb_enable)
                     .tb_capacity(tb_capacity)
                     .tb_fill_rate(tb_fill_rate)
                     .tb_expired(tb_expired);
+
+                #[cfg(feature = "limit")]
+                let mut builder = builder.sign_secret_key(sign_secret_key);
 
                 if tls_key.is_some() && tls_cert.is_some() {
                     builder = builder.tls_keypair(Some((tls_cert.unwrap(), tls_key.unwrap())));
