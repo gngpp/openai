@@ -27,6 +27,7 @@ futures-util = "0.3.28"
 bytes = { version = "1.4.0", default-features = false }
 jsonwebtokens = "1"
 sha2 = "0.10.6"
+hmac = { version = "0.12.1", optional = true }
 actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
 rustls-pemfile = { version = "1.0.2", optional = true }
 tokio-rustls = { version = "0.23.4", optional = true }
@@ -36,9 +37,10 @@ hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched
 h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
 [features]
-default = ["serve", "limit"]
+default = ["serve", "limit", "sign"]
 serve = ["actix-web", "rustls-pemfile", "tokio-rustls"]
 limit = []
+sign = ["hmac"]
 remote-token = []
 
 [lib]
