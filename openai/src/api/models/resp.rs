@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::api::Success;
 
@@ -248,4 +249,106 @@ pub struct MessageFeedbackResponse {
     pub create_time: String,
     pub embedded_conversation: String,
     pub storage_protocol: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAccountsCheckV4Response {
+    pub accounts: Accounts,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Accounts {
+    pub default: Default,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Default {
+    pub account: Account,
+    pub features: Vec<String>,
+    pub entitlement: Entitlement,
+    #[serde(rename = "last_active_subscription")]
+    pub last_active_subscription: LastActiveSubscription,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    #[serde(rename = "account_user_role")]
+    pub account_user_role: String,
+    #[serde(rename = "account_user_id")]
+    pub account_user_id: String,
+    pub processor: Processor,
+    #[serde(rename = "account_id")]
+    pub account_id: String,
+    #[serde(rename = "is_most_recent_expired_subscription_gratis")]
+    pub is_most_recent_expired_subscription_gratis: bool,
+    #[serde(rename = "has_previously_paid_subscription")]
+    pub has_previously_paid_subscription: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Processor {
+    pub a001: A001,
+    pub b001: B001,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct A001 {
+    #[serde(rename = "has_customer_object")]
+    pub has_customer_object: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct B001 {
+    #[serde(rename = "has_transaction_history")]
+    pub has_transaction_history: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Entitlement {
+    #[serde(rename = "subscription_id")]
+    pub subscription_id: Value,
+    #[serde(rename = "has_active_subscription")]
+    pub has_active_subscription: bool,
+    #[serde(rename = "subscription_plan")]
+    pub subscription_plan: String,
+    #[serde(rename = "expires_at")]
+    pub expires_at: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastActiveSubscription {
+    #[serde(rename = "subscription_id")]
+    pub subscription_id: Value,
+    #[serde(rename = "purchase_origin_platform")]
+    pub purchase_origin_platform: String,
+    #[serde(rename = "will_renew")]
+    pub will_renew: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetConvoLimitResponse {
+    #[serde(rename = "message_cap")]
+    pub message_cap: i64,
+    #[serde(rename = "message_cap_window")]
+    pub message_cap_window: i64,
+    #[serde(rename = "message_disclaimer")]
+    pub message_disclaimer: MessageDisclaimer,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageDisclaimer {
+    pub textarea: String,
+    #[serde(rename = "model-switcher")]
+    pub model_switcher: String,
 }

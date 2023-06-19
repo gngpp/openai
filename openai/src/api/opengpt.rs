@@ -11,7 +11,8 @@ use tokio::sync::RwLock;
 
 use super::{
     models::{req, resp},
-    ApiError, ApiResult, PostConvoStreamResponse, RequestMethod, HEADER_UA, URL_CHATGPT_BASE,
+    ApiError, ApiResult, PostConvoStreamResponse, RequestMethod, HEADER_UA, URL_CHATGPT_BACKEND,
+    URL_CHATGPT_PUBLIC,
 };
 
 pub struct OpenGPT {
@@ -69,58 +70,72 @@ impl OpenGPT {
     }
 
     async fn response_handle<U: DeserializeOwned>(&self, resp: reqwest::Response) -> ApiResult<U> {
-        let url = resp.url().clone();
         match resp.error_for_status_ref() {
             Ok(_) => Ok(resp
                 .json::<U>()
                 .await
                 .map_err(ApiError::JsonReqwestDeserializeError)?),
-            Err(err) => {
-                let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
-                match err.status() {
-                        Some(
-                            status_code
-                            @
-                            // 4xx
-                            (StatusCode::UNAUTHORIZED
-                            | StatusCode::REQUEST_TIMEOUT
-                            | StatusCode::TOO_MANY_REQUESTS
-                            | StatusCode::BAD_REQUEST
-                            | StatusCode::PAYMENT_REQUIRED
-                            | StatusCode::FORBIDDEN
-                            // 5xx
-                            | StatusCode::INTERNAL_SERVER_ERROR
-                            | StatusCode::BAD_GATEWAY
-                            | StatusCode::SERVICE_UNAVAILABLE
-                            | StatusCode::GATEWAY_TIMEOUT),
-                        ) => {
-                            if status_code == StatusCode::UNAUTHORIZED {
-                                return Err(ApiError::BadAuthenticationError(err_msg))
-                            }
-                            if status_code == StatusCode::TOO_MANY_REQUESTS {
-                                return Err(ApiError::TooManyRequestsError(err_msg))
-                            }
-                            if status_code.is_client_error() {
-                                return Err(ApiError::BadRequestError(err_msg))
-                            }
-                            Err(ApiError::ServerError)
-                        },
-                        _ => Err(ApiError::FailedRequestError(err_msg)),
-                    }
-            }
+            Err(err) => Err(self.err_handle(err, resp).await?),
         }
+    }
+
+    async fn err_handle(
+        &self,
+        err: reqwest::Error,
+        resp: reqwest::Response,
+    ) -> ApiResult<ApiError> {
+        let url = resp.url().clone();
+        let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
+        match err.status() {
+                Some(
+                    status_code
+                    @
+                    // 4xx
+                    (StatusCode::UNAUTHORIZED
+                    | StatusCode::REQUEST_TIMEOUT
+                    | StatusCode::TOO_MANY_REQUESTS
+                    | StatusCode::BAD_REQUEST
+                    | StatusCode::PAYMENT_REQUIRED
+                    | StatusCode::FORBIDDEN
+                    // 5xx
+                    | StatusCode::INTERNAL_SERVER_ERROR
+                    | StatusCode::BAD_GATEWAY
+                    | StatusCode::SERVICE_UNAVAILABLE
+                    | StatusCode::GATEWAY_TIMEOUT),
+                ) => {
+                    if status_code == StatusCode::UNAUTHORIZED {
+                        return Ok(ApiError::BadAuthenticationError(err_msg))
+                    }
+                    if status_code == StatusCode::TOO_MANY_REQUESTS {
+                        return Ok(ApiError::TooManyRequestsError(err_msg))
+                    }
+                    if status_code.is_client_error() {
+                        return Ok(ApiError::BadRequestError(err_msg))
+                    }
+                    Ok(ApiError::ServerError)
+                },
+                _ => Ok(ApiError::FailedRequestError(err_msg)),
+            }
     }
 }
 
 impl OpenGPT {
     pub async fn get_models(&self) -> ApiResult<resp::GetModelsResponse> {
-        self.request(format!("{URL_CHATGPT_BASE}/models"), RequestMethod::GET)
+        self.request(format!("{URL_CHATGPT_BACKEND}/models"), RequestMethod::GET)
             .await
     }
 
     pub async fn get_account_check(&self) -> ApiResult<resp::GetAccountsCheckResponse> {
         self.request(
-            format!("{URL_CHATGPT_BASE}/accounts/check"),
+            format!("{URL_CHATGPT_BACKEND}/accounts/check"),
+            RequestMethod::GET,
+        )
+        .await
+    }
+
+    pub async fn get_account_check_4(&self) -> ApiResult<resp::GetAccountsCheckV4Response> {
+        self.request(
+            format!("{URL_CHATGPT_BACKEND}/accounts/check/v4-2023-04-27"),
             RequestMethod::GET,
         )
         .await
@@ -133,7 +148,7 @@ impl OpenGPT {
         match req.conversation_id {
             Some(conversation_id) => {
                 self.request::<resp::GetConvoResonse>(
-                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    format!("{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"),
                     RequestMethod::GET,
                 )
                 .await
@@ -148,7 +163,7 @@ impl OpenGPT {
     ) -> ApiResult<resp::GetConvosResponse> {
         self.request::<resp::GetConvosResponse>(
             format!(
-                "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}&order=updated",
+                "{URL_CHATGPT_BACKEND}/conversations?offset={}&limit={}&order=updated",
                 req.offset, req.limit
             ),
             RequestMethod::GET,
@@ -159,8 +174,8 @@ impl OpenGPT {
     pub async fn post_conversation<'a>(
         &self,
         req: req::PostConvoRequest<'a>,
-    ) -> anyhow::Result<PostConvoStreamResponse> {
-        let url = format!("{URL_CHATGPT_BASE}/conversation");
+    ) -> ApiResult<PostConvoStreamResponse> {
+        let url = format!("{URL_CHATGPT_BACKEND}/conversation");
         let resp = self
             .client
             .post(url)
@@ -168,15 +183,17 @@ impl OpenGPT {
             .json(&req)
             .send()
             .await?;
-
-        Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream())))
+        match resp.error_for_status_ref() {
+            Ok(_) => Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream()))),
+            Err(err) => Err(self.err_handle(err, resp).await?),
+        }
     }
 
     pub async fn post_conversation_completions<'a>(
         &self,
         req: req::PostConvoRequest<'a>,
     ) -> ApiResult<Vec<resp::PostConvoResponse>> {
-        let url = format!("{URL_CHATGPT_BASE}/conversation");
+        let url = format!("{URL_CHATGPT_BACKEND}/conversation");
         let resp = self
             .client
             .post(url)
@@ -185,26 +202,32 @@ impl OpenGPT {
             .send()
             .await?;
 
-        let mut v = Vec::new();
-        let mut stream = resp.bytes_stream();
+        match resp.error_for_status_ref() {
+            Ok(_) => {
+                let mut v = Vec::new();
+                let mut stream = resp.bytes_stream();
 
-        while let Some(item) = stream.next().await {
-            let body = String::from_utf8(item?.to_vec()).map_err(ApiError::FromUtf8Error)?;
+                while let Some(item) = stream.next().await {
+                    let body =
+                        String::from_utf8(item?.to_vec()).map_err(ApiError::FromUtf8Error)?;
 
-            if body.starts_with("data: {") {
-                let chunks: Vec<&str> = body.lines().filter(|s| !s.is_empty()).collect();
-                for ele in chunks {
-                    let body = ele.trim_start_matches("data: ").trim();
-                    let res = serde_json::from_str::<resp::PostConvoResponse>(body)
-                        .map_err(ApiError::SerdeDeserializeError)?;
-                    v.push(res);
+                    if body.starts_with("data: {") {
+                        let chunks: Vec<&str> = body.lines().filter(|s| !s.is_empty()).collect();
+                        for ele in chunks {
+                            let body = ele.trim_start_matches("data: ").trim();
+                            let res = serde_json::from_str::<resp::PostConvoResponse>(body)
+                                .map_err(ApiError::SerdeDeserializeError)?;
+                            v.push(res);
+                        }
+                    } else if body.starts_with("data: [DONE]") {
+                        break;
+                    }
                 }
-            } else if body.starts_with("data: [DONE]") {
-                break;
-            }
-        }
 
-        Ok(v)
+                Ok(v)
+            }
+            Err(err) => Err(self.err_handle(err, resp).await?),
+        }
     }
 
     pub async fn patch_conversation<'a>(
@@ -214,7 +237,7 @@ impl OpenGPT {
         match &req.conversation_id {
             Some(conversation_id) => {
                 self.request_payload(
-                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    format!("{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"),
                     RequestMethod::PATCH,
                     &req,
                 )
@@ -229,7 +252,7 @@ impl OpenGPT {
         req: req::PatchConvoRequest<'a>,
     ) -> ApiResult<resp::PatchConvoResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_BASE}/conversations"),
+            format!("{URL_CHATGPT_BACKEND}/conversations"),
             RequestMethod::PATCH,
             &req,
         )
@@ -242,7 +265,7 @@ impl OpenGPT {
     ) -> ApiResult<resp::PostConvoGenTitleResponse> {
         self.request_payload(
             format!(
-                "{URL_CHATGPT_BASE}/conversation/gen_title/{}",
+                "{URL_CHATGPT_BACKEND}/conversation/gen_title/{}",
                 req.conversation_id
             ),
             RequestMethod::POST,
@@ -256,9 +279,17 @@ impl OpenGPT {
         req: req::MessageFeedbackRequest<'a>,
     ) -> ApiResult<resp::MessageFeedbackResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_BASE}/conversation/message_feedbak"),
+            format!("{URL_CHATGPT_BACKEND}/conversation/message_feedbak"),
             RequestMethod::POST,
             &req,
+        )
+        .await
+    }
+
+    pub async fn get_conversation_limit(&self) -> ApiResult<resp::GetConvoLimitResponse> {
+        self.request(
+            format!("{URL_CHATGPT_PUBLIC}/conversation/message_feedbak"),
+            RequestMethod::GET,
         )
         .await
     }
@@ -331,7 +362,7 @@ impl OpenGPTBuilder {
         OpenGPTBuilder {
             builder: client,
             api: OpenGPT {
-                api_prefix: String::from(URL_CHATGPT_BASE),
+                api_prefix: String::from(URL_CHATGPT_BACKEND),
                 client: reqwest::Client::new(),
                 access_token: RwLock::default(),
             },
