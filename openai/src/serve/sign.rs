@@ -1,5 +1,20 @@
 use actix_web::{dev::ServiceRequest, http::header::HeaderMap};
 
+enum SignHeader {
+    Authorization,
+    Time,
+    Signature,
+}
+
+impl ToString for SignHeader {
+    fn to_string(&self) -> String {
+        match self {
+            SignHeader::Authorization => "Authorization".to_lowercase(),
+            SignHeader::Time => "Time".to_lowercase(),
+            SignHeader::Signature => "Signature".to_lowercase(),
+        }
+    }
+}
 pub struct Sign;
 
 impl Sign {
@@ -7,14 +22,14 @@ impl Sign {
         let headers = req.headers();
         // Extract the signature in the request
         let signature = headers
-            .get("X-Authorization")
-            .ok_or("header X-Authorization cannot been empty")?
+            .get(SignHeader::Signature.to_string())
+            .ok_or("header Signature cannot been empty")?
             .to_str()
             .map_err(|op| op.to_string())?;
 
         let timestamp = headers
-            .get("X-Time")
-            .ok_or("header X-Time cannot been empty")?
+            .get(SignHeader::Time.to_string())
+            .ok_or("header Time cannot been empty")?
             .to_str()
             .map_err(|op| op.to_string())?
             .parse::<u64>()
@@ -59,7 +74,11 @@ impl Sign {
         let mut sorted_headers = std::collections::BTreeMap::new();
         headers
             .iter()
-            .filter(|(k, _)| !k.as_str().eq("X-Authorization"))
+            .filter(|(k, _)| {
+                let name = k.as_str();
+                name.eq(&SignHeader::Authorization.to_string())
+                    || name.eq(&SignHeader::Time.to_string())
+            })
             .for_each(|(k, v)| {
                 println!("{}", k);
                 sorted_headers.insert(k.as_str(), String::from_utf8_lossy(v.as_bytes()));
