@@ -11,7 +11,8 @@ use tokio::sync::RwLock;
 
 use super::{
     models::{req, resp},
-    ApiError, ApiResult, PostConvoStreamResponse, RequestMethod, HEADER_UA, URL_CHATGPT_BASE,
+    ApiError, ApiResult, PostConvoStreamResponse, RequestMethod, HEADER_UA, URL_CHATGPT_BACKEND,
+    URL_CHATGPT_PUBLIC,
 };
 
 pub struct OpenGPT {
@@ -120,13 +121,21 @@ impl OpenGPT {
 
 impl OpenGPT {
     pub async fn get_models(&self) -> ApiResult<resp::GetModelsResponse> {
-        self.request(format!("{URL_CHATGPT_BASE}/models"), RequestMethod::GET)
+        self.request(format!("{URL_CHATGPT_BACKEND}/models"), RequestMethod::GET)
             .await
     }
 
     pub async fn get_account_check(&self) -> ApiResult<resp::GetAccountsCheckResponse> {
         self.request(
-            format!("{URL_CHATGPT_BASE}/accounts/check"),
+            format!("{URL_CHATGPT_BACKEND}/accounts/check"),
+            RequestMethod::GET,
+        )
+        .await
+    }
+
+    pub async fn get_account_check_4(&self) -> ApiResult<resp::GetAccountsCheckV4Response> {
+        self.request(
+            format!("{URL_CHATGPT_BACKEND}/accounts/check/v4-2023-04-27"),
             RequestMethod::GET,
         )
         .await
@@ -139,7 +148,7 @@ impl OpenGPT {
         match req.conversation_id {
             Some(conversation_id) => {
                 self.request::<resp::GetConvoResonse>(
-                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    format!("{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"),
                     RequestMethod::GET,
                 )
                 .await
@@ -154,7 +163,7 @@ impl OpenGPT {
     ) -> ApiResult<resp::GetConvosResponse> {
         self.request::<resp::GetConvosResponse>(
             format!(
-                "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}&order=updated",
+                "{URL_CHATGPT_BACKEND}/conversations?offset={}&limit={}&order=updated",
                 req.offset, req.limit
             ),
             RequestMethod::GET,
@@ -166,7 +175,7 @@ impl OpenGPT {
         &self,
         req: req::PostConvoRequest<'a>,
     ) -> ApiResult<PostConvoStreamResponse> {
-        let url = format!("{URL_CHATGPT_BASE}/conversation");
+        let url = format!("{URL_CHATGPT_BACKEND}/conversation");
         let resp = self
             .client
             .post(url)
@@ -184,7 +193,7 @@ impl OpenGPT {
         &self,
         req: req::PostConvoRequest<'a>,
     ) -> ApiResult<Vec<resp::PostConvoResponse>> {
-        let url = format!("{URL_CHATGPT_BASE}/conversation");
+        let url = format!("{URL_CHATGPT_BACKEND}/conversation");
         let resp = self
             .client
             .post(url)
@@ -228,7 +237,7 @@ impl OpenGPT {
         match &req.conversation_id {
             Some(conversation_id) => {
                 self.request_payload(
-                    format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"),
+                    format!("{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"),
                     RequestMethod::PATCH,
                     &req,
                 )
@@ -243,7 +252,7 @@ impl OpenGPT {
         req: req::PatchConvoRequest<'a>,
     ) -> ApiResult<resp::PatchConvoResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_BASE}/conversations"),
+            format!("{URL_CHATGPT_BACKEND}/conversations"),
             RequestMethod::PATCH,
             &req,
         )
@@ -256,7 +265,7 @@ impl OpenGPT {
     ) -> ApiResult<resp::PostConvoGenTitleResponse> {
         self.request_payload(
             format!(
-                "{URL_CHATGPT_BASE}/conversation/gen_title/{}",
+                "{URL_CHATGPT_BACKEND}/conversation/gen_title/{}",
                 req.conversation_id
             ),
             RequestMethod::POST,
@@ -270,9 +279,17 @@ impl OpenGPT {
         req: req::MessageFeedbackRequest<'a>,
     ) -> ApiResult<resp::MessageFeedbackResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_BASE}/conversation/message_feedbak"),
+            format!("{URL_CHATGPT_BACKEND}/conversation/message_feedbak"),
             RequestMethod::POST,
             &req,
+        )
+        .await
+    }
+
+    pub async fn get_conversation_limit(&self) -> ApiResult<resp::GetConvoLimitResponse> {
+        self.request(
+            format!("{URL_CHATGPT_PUBLIC}/conversation/message_feedbak"),
+            RequestMethod::GET,
         )
         .await
     }
@@ -345,7 +362,7 @@ impl OpenGPTBuilder {
         OpenGPTBuilder {
             builder: client,
             api: OpenGPT {
-                api_prefix: String::from(URL_CHATGPT_BASE),
+                api_prefix: String::from(URL_CHATGPT_BACKEND),
                 client: reqwest::Client::new(),
                 access_token: RwLock::default(),
             },

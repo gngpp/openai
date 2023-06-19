@@ -25,7 +25,7 @@ use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;
 use crate::{info, oauth};
 
-use super::api::{HEADER_UA, URL_CHATGPT_BASE};
+use super::api::{HEADER_UA, URL_CHATGPT_BACKEND, URL_CHATGPT_PUBLIC};
 
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;
@@ -114,6 +114,8 @@ impl Launcher {
                         .wrap(middleware::TokenAuthorization)
                         .service(get_models)
                         .service(get_account_check)
+                        .service(get_account_check_v4)
+                        .service(get_settings_beta_features)
                         .service(get_conversation)
                         .service(get_conversations)
                         .service(post_conversation)
@@ -122,6 +124,7 @@ impl Launcher {
                         .service(patch_conversation)
                         .service(patch_conversations),
                 )
+                .service(web::scope("/public-api").service(get_conversation_limit))
                 .service(
                     web::scope("/oauth")
                         .service(do_access_token)
@@ -265,7 +268,10 @@ async fn do_revoke_token(req: HttpRequest) -> impl Responder {
 #[get("/models")]
 async fn get_models(req: HttpRequest) -> impl Responder {
     match client()
-        .get(format!("{URL_CHATGPT_BASE}/models"))
+        .get(format!(
+            "{URL_CHATGPT_BACKEND}/models?{}",
+            req.query_string()
+        ))
         .headers(header_convert(req.headers()))
         .send()
         .await
@@ -275,10 +281,39 @@ async fn get_models(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[post("/accounts/check")]
+#[get("/accounts/check")]
 async fn get_account_check(req: HttpRequest) -> impl Responder {
     match client()
-        .get(format!("{URL_CHATGPT_BASE}/accounts/check"))
+        .get(format!("{URL_CHATGPT_BACKEND}/accounts/check"))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await
+    {
+        Ok(resp) => response_handle(resp),
+        Err(err) => response_internal_server_handle(err),
+    }
+}
+
+#[get("/accounts/check/v4-2023-04-27")]
+async fn get_account_check_v4(req: HttpRequest) -> impl Responder {
+    match client()
+        .get(format!(
+            "{URL_CHATGPT_BACKEND}/accounts/check/v4-2023-04-27"
+        ))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await
+    {
+        Ok(resp) => response_handle(resp),
+        Err(err) => response_internal_server_handle(err),
+    }
+}
+
+/// chatgpt plus
+#[get("/settings/beta_features")]
+async fn get_settings_beta_features(req: HttpRequest) -> impl Responder {
+    match client()
+        .get(format!("{URL_CHATGPT_BACKEND}/settings/beta_features"))
         .headers(header_convert(req.headers()))
         .send()
         .await
@@ -292,7 +327,7 @@ async fn get_account_check(req: HttpRequest) -> impl Responder {
 async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) -> impl Responder {
     match client()
         .get(format!(
-            "{URL_CHATGPT_BASE}/conversation/{}",
+            "{URL_CHATGPT_BACKEND}/conversation/{}",
             conversation_id.into_inner()
         ))
         .headers(header_convert(req.headers()))
@@ -309,7 +344,7 @@ async fn get_conversations(req: HttpRequest, param: web::Query<ConvosQuery>) -> 
     let param = param.into_inner();
     match client()
         .get(format!(
-            "{URL_CHATGPT_BASE}/conversations?offset={}&limit={}&order={}",
+            "{URL_CHATGPT_BACKEND}/conversations?offset={}&limit={}&order={}",
             param.offset, param.limit, param.order
         ))
         .headers(header_convert(req.headers()))
@@ -324,7 +359,7 @@ async fn get_conversations(req: HttpRequest, param: web::Query<ConvosQuery>) -> 
 #[post("/conversation")]
 async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
-        .post(format!("{URL_CHATGPT_BASE}/conversation"))
+        .post(format!("{URL_CHATGPT_BACKEND}/conversation"))
         .headers(header_convert(req.headers()))
         .json(&body)
         .send()
@@ -342,7 +377,9 @@ async fn patch_conversation(
     body: Json<Value>,
 ) -> impl Responder {
     match client()
-        .patch(format!("{URL_CHATGPT_BASE}/conversation/{conversation_id}"))
+        .patch(format!(
+            "{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"
+        ))
         .headers(header_convert(req.headers()))
         .json(&body)
         .send()
@@ -356,7 +393,7 @@ async fn patch_conversation(
 #[patch("/conversations")]
 async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
-        .patch(format!("{URL_CHATGPT_BASE}/conversations"))
+        .patch(format!("{URL_CHATGPT_BACKEND}/conversations"))
         .headers(header_convert(req.headers()))
         .json(&body)
         .send()
@@ -375,7 +412,7 @@ async fn post_conversation_gen_title(
 ) -> impl Responder {
     match client()
         .post(format!(
-            "{URL_CHATGPT_BASE}/conversation/gen_title/{conversation_id}"
+            "{URL_CHATGPT_BACKEND}/conversation/gen_title/{conversation_id}"
         ))
         .headers(header_convert(req.headers()))
         .json(&body)
@@ -390,9 +427,24 @@ async fn post_conversation_gen_title(
 #[post("/conversation/message_feedbak")]
 async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>) -> impl Responder {
     match client()
-        .post(format!("{URL_CHATGPT_BASE}/conversation/message_feedbak"))
+        .post(format!(
+            "{URL_CHATGPT_BACKEND}/conversation/message_feedbak"
+        ))
         .headers(header_convert(req.headers()))
         .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => response_handle(resp),
+        Err(err) => response_internal_server_handle(err),
+    }
+}
+
+#[get("/conversation_limit")]
+async fn get_conversation_limit(req: HttpRequest) -> impl Responder {
+    match client()
+        .get(format!("{URL_CHATGPT_PUBLIC}/conversation_limit"))
+        .headers(header_convert(req.headers()))
         .send()
         .await
     {
