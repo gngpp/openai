@@ -10,30 +10,37 @@ struct BucketState {
 }
 
 pub struct TokenBucket {
+    enable: bool,
     // token bucket capacity `capacity`
     capacity: u32,
     /// token bucket fill rate `fill_rate`
     fill_rate: u32,
-    // ip -> token backet
+    /// ip -> token backet
     buckets: Arc<Mutex<HashMap<IpAddr, BucketState>>>,
-    _cleanup_task: tokio::task::JoinHandle<()>,
+    _cleanup_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl TokenBucket {
-    pub fn new(capacity: u32, fill_rate: u32, expired: u32) -> Self {
+    pub fn new(enable: bool, capacity: u32, fill_rate: u32, expired: u32) -> Self {
         let buckets: Arc<Mutex<HashMap<IpAddr, BucketState>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let b = buckets.clone();
-        let task = tokio::task::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(expired.into())).await;
-                let x = Instant::now();
-                let mut b = b.lock().await;
-                b.retain(|_, v| v.last_time > x);
-                drop(b)
-            }
-        });
+        let task = if enable {
+            let task = tokio::task::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(expired.into())).await;
+                    let x = Instant::now();
+                    let mut b = b.lock().await;
+                    b.retain(|_, v| v.last_time > x);
+                    drop(b)
+                }
+            });
+            Some(task)
+        } else {
+            None
+        };
         Self {
+            enable,
             capacity,
             fill_rate,
             buckets,
@@ -42,6 +49,9 @@ impl TokenBucket {
     }
 
     pub async fn acquire(&self, ip: IpAddr) -> bool {
+        if !self.enable {
+            return true;
+        }
         let mut buckets = self.buckets.lock().await;
         let now = Instant::now();
 

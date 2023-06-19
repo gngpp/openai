@@ -38,6 +38,11 @@ features = [
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched" }
 h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp" }
 
+[features]
+default = ["limit", "sign"]
+limit = ["openai/limit", "openai/serve"]
+sign = ["openai/sign"]
+
 [[bin]]
 name = "opengpt"
 path = "src/main.rs"

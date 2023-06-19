@@ -1,4 +1,6 @@
 pub mod middleware;
+#[cfg(feature = "sign")]
+pub mod sign;
 #[cfg(feature = "limit")]
 pub mod tokenbucket;
 
@@ -55,13 +57,19 @@ pub struct Launcher {
     tcp_keepalive: Duration,
     /// TLS keypair
     tls_keypair: Option<(PathBuf, PathBuf)>,
-    /// Enable token bucket flow limitation
+    /// Enable url signature (signature secret key)
+    #[cfg(feature = "sign")]
+    sign_secret_key: Option<String>,
+    /// Enable Tokenbucket
     tb_enable: bool,
-    /// Token bucket capacity
+    /// Tokenbucket capacity
+    #[cfg(feature = "limit")]
     tb_capacity: u32,
-    /// Token bucket fill rate
+    /// Tokenbucket fill rate
+    #[cfg(feature = "limit")]
     tb_fill_rate: u32,
-    /// Token bucket expired (second)
+    /// Tokenbucket expired (second)
+    #[cfg(feature = "limit")]
     tb_expired: u32,
 }
 
@@ -97,99 +105,77 @@ impl Launcher {
             "Starting HTTP(S) server at http(s)://{}:{}",
             self.host, self.port
         );
-        let ctls_keypaird = self.tls_keypair.clone();
-        let default_serve = async {
-            let serve = HttpServer::new(move || {
-                App::new()
-                    .wrap(Logger::default())
-                    .service(
-                        web::scope("/backend-api")
-                            .wrap(middleware::TokenAuthorization)
-                            .service(get_models)
-                            .service(get_account_check)
-                            .service(get_conversation)
-                            .service(get_conversations)
-                            .service(post_conversation)
-                            .service(post_conversation_gen_title)
-                            .service(post_conversation_message_feedback)
-                            .service(patch_conversation)
-                            .service(patch_conversations),
-                    )
-                    .service(
-                        web::scope("/oauth")
-                            .service(do_access_token)
-                            .service(do_refresh_token)
-                            .service(do_revoke_token),
-                    )
-            })
-            .keep_alive(self.tcp_keepalive)
-            .workers(self.workers);
-            match ctls_keypaird {
-                Some(keypair) => {
-                    let tls_config = Self::load_rustls_config(keypair.0, keypair.1).await?;
-                    serve
-                        .bind_rustls((self.host, self.port), tls_config)?
-                        .run()
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e))
-                }
-                None => serve
-                    .bind((self.host, self.port))?
-                    .run()
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e)),
-            }
-        };
 
-        #[cfg(feature = "limit")]
-        if self.tb_enable {
-            let serve = HttpServer::new(move || {
-                let mw = TokenBucket::new(self.tb_capacity, self.tb_fill_rate, self.tb_expired);
-                App::new()
-                    .wrap(Logger::default())
-                    .wrap(middleware::TokenBucketRateLimiter::new(mw))
-                    .service(
-                        web::scope("/backend-api")
-                            .wrap(middleware::TokenAuthorization)
-                            .service(get_models)
-                            .service(get_account_check)
-                            .service(get_conversation)
-                            .service(get_conversations)
-                            .service(post_conversation)
-                            .service(post_conversation_gen_title)
-                            .service(post_conversation_message_feedback)
-                            .service(patch_conversation)
-                            .service(patch_conversations),
-                    )
-                    .service(
-                        web::scope("/oauth")
-                            .service(do_access_token)
-                            .service(do_refresh_token)
-                            .service(do_revoke_token),
-                    )
-            })
-            .keep_alive(self.tcp_keepalive)
-            .workers(self.workers);
-            match self.tls_keypair {
-                Some(keypair) => {
-                    let tls_config = Self::load_rustls_config(keypair.0, keypair.1).await?;
-                    serve
-                        .bind_rustls((self.host, self.port), tls_config)?
-                        .run()
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e))
-                }
-                None => serve
-                    .bind((self.host, self.port))?
+        let serve = HttpServer::new(move || {
+            let app = App::new()
+                .wrap(Logger::default())
+                .service(
+                    web::scope("/backend-api")
+                        .wrap(middleware::TokenAuthorization)
+                        .service(get_models)
+                        .service(get_account_check)
+                        .service(get_conversation)
+                        .service(get_conversations)
+                        .service(post_conversation)
+                        .service(post_conversation_gen_title)
+                        .service(post_conversation_message_feedback)
+                        .service(patch_conversation)
+                        .service(patch_conversations),
+                )
+                .service(
+                    web::scope("/oauth")
+                        .service(do_access_token)
+                        .service(do_refresh_token)
+                        .service(do_revoke_token),
+                );
+
+            #[cfg(all(not(feature = "sign"), feature = "limit"))]
+            {
+                return app.wrap(middleware::TokenBucketRateLimiter::new(TokenBucket::new(
+                    self.tb_enable,
+                    self.tb_capacity,
+                    self.tb_fill_rate,
+                    self.tb_expired,
+                )));
+            }
+
+            #[cfg(all(not(feature = "limit"), feature = "sign"))]
+            {
+                return app.wrap(middleware::ApiSign::new(self.sign_secret_key.clone()));
+            }
+
+            #[cfg(all(feature = "sign", feature = "limit"))]
+            {
+                return app
+                    .wrap(middleware::ApiSign::new(self.sign_secret_key.clone()))
+                    .wrap(middleware::TokenBucketRateLimiter::new(TokenBucket::new(
+                        self.tb_enable,
+                        self.tb_capacity,
+                        self.tb_fill_rate,
+                        self.tb_expired,
+                    )));
+            }
+
+            #[cfg(not(any(feature = "sign", feature = "limit")))]
+            app
+        })
+        .keep_alive(self.tcp_keepalive)
+        .workers(self.workers);
+        match self.tls_keypair {
+            Some(keypair) => {
+                let tls_config = Self::load_rustls_config(keypair.0, keypair.1).await?;
+                serve
+                    .bind_rustls((self.host, self.port), tls_config)?
                     .run()
                     .await
-                    .map_err(|e| anyhow::anyhow!(e)),
+                    .map_err(|e| anyhow::anyhow!(e))
             }
-        } else {
-            default_serve.await
+            None => serve
+                .bind((self.host, self.port))?
+                .run()
+                .await
+                .map_err(|e| anyhow::anyhow!(e)),
         }
-        #[cfg(not(feature = "limit"))]
-        default_serve.await
     }
 
     async fn load_rustls_config(
