@@ -20,4 +20,5 @@ Cargo.lock
 
 .opengpt-access_tokens
 .vscode
-l
+thunder-tests
+.env
