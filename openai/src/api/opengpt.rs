@@ -69,46 +69,52 @@ impl OpenGPT {
     }
 
     async fn response_handle<U: DeserializeOwned>(&self, resp: reqwest::Response) -> ApiResult<U> {
-        let url = resp.url().clone();
         match resp.error_for_status_ref() {
             Ok(_) => Ok(resp
                 .json::<U>()
                 .await
                 .map_err(ApiError::JsonReqwestDeserializeError)?),
-            Err(err) => {
-                let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
-                match err.status() {
-                        Some(
-                            status_code
-                            @
-                            // 4xx
-                            (StatusCode::UNAUTHORIZED
-                            | StatusCode::REQUEST_TIMEOUT
-                            | StatusCode::TOO_MANY_REQUESTS
-                            | StatusCode::BAD_REQUEST
-                            | StatusCode::PAYMENT_REQUIRED
-                            | StatusCode::FORBIDDEN
-                            // 5xx
-                            | StatusCode::INTERNAL_SERVER_ERROR
-                            | StatusCode::BAD_GATEWAY
-                            | StatusCode::SERVICE_UNAVAILABLE
-                            | StatusCode::GATEWAY_TIMEOUT),
-                        ) => {
-                            if status_code == StatusCode::UNAUTHORIZED {
-                                return Err(ApiError::BadAuthenticationError(err_msg))
-                            }
-                            if status_code == StatusCode::TOO_MANY_REQUESTS {
-                                return Err(ApiError::TooManyRequestsError(err_msg))
-                            }
-                            if status_code.is_client_error() {
-                                return Err(ApiError::BadRequestError(err_msg))
-                            }
-                            Err(ApiError::ServerError)
-                        },
-                        _ => Err(ApiError::FailedRequestError(err_msg)),
-                    }
-            }
+            Err(err) => Err(self.err_handle(err, resp).await?),
         }
+    }
+
+    async fn err_handle(
+        &self,
+        err: reqwest::Error,
+        resp: reqwest::Response,
+    ) -> ApiResult<ApiError> {
+        let url = resp.url().clone();
+        let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
+        match err.status() {
+                Some(
+                    status_code
+                    @
+                    // 4xx
+                    (StatusCode::UNAUTHORIZED
+                    | StatusCode::REQUEST_TIMEOUT
+                    | StatusCode::TOO_MANY_REQUESTS
+                    | StatusCode::BAD_REQUEST
+                    | StatusCode::PAYMENT_REQUIRED
+                    | StatusCode::FORBIDDEN
+                    // 5xx
+                    | StatusCode::INTERNAL_SERVER_ERROR
+                    | StatusCode::BAD_GATEWAY
+                    | StatusCode::SERVICE_UNAVAILABLE
+                    | StatusCode::GATEWAY_TIMEOUT),
+                ) => {
+                    if status_code == StatusCode::UNAUTHORIZED {
+                        return Ok(ApiError::BadAuthenticationError(err_msg))
+                    }
+                    if status_code == StatusCode::TOO_MANY_REQUESTS {
+                        return Ok(ApiError::TooManyRequestsError(err_msg))
+                    }
+                    if status_code.is_client_error() {
+                        return Ok(ApiError::BadRequestError(err_msg))
+                    }
+                    Ok(ApiError::ServerError)
+                },
+                _ => Ok(ApiError::FailedRequestError(err_msg)),
+            }
     }
 }
 
@@ -159,7 +165,7 @@ impl OpenGPT {
     pub async fn post_conversation<'a>(
         &self,
         req: req::PostConvoRequest<'a>,
-    ) -> anyhow::Result<PostConvoStreamResponse> {
+    ) -> ApiResult<PostConvoStreamResponse> {
         let url = format!("{URL_CHATGPT_BASE}/conversation");
         let resp = self
             .client
@@ -168,8 +174,10 @@ impl OpenGPT {
             .json(&req)
             .send()
             .await?;
-
-        Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream())))
+        match resp.error_for_status_ref() {
+            Ok(_) => Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream()))),
+            Err(err) => Err(self.err_handle(err, resp).await?),
+        }
     }
 
     pub async fn post_conversation_completions<'a>(
@@ -185,26 +193,32 @@ impl OpenGPT {
             .send()
             .await?;
 
-        let mut v = Vec::new();
-        let mut stream = resp.bytes_stream();
+        match resp.error_for_status_ref() {
+            Ok(_) => {
+                let mut v = Vec::new();
+                let mut stream = resp.bytes_stream();
 
-        while let Some(item) = stream.next().await {
-            let body = String::from_utf8(item?.to_vec()).map_err(ApiError::FromUtf8Error)?;
+                while let Some(item) = stream.next().await {
+                    let body =
+                        String::from_utf8(item?.to_vec()).map_err(ApiError::FromUtf8Error)?;
 
-            if body.starts_with("data: {") {
-                let chunks: Vec<&str> = body.lines().filter(|s| !s.is_empty()).collect();
-                for ele in chunks {
-                    let body = ele.trim_start_matches("data: ").trim();
-                    let res = serde_json::from_str::<resp::PostConvoResponse>(body)
-                        .map_err(ApiError::SerdeDeserializeError)?;
-                    v.push(res);
+                    if body.starts_with("data: {") {
+                        let chunks: Vec<&str> = body.lines().filter(|s| !s.is_empty()).collect();
+                        for ele in chunks {
+                            let body = ele.trim_start_matches("data: ").trim();
+                            let res = serde_json::from_str::<resp::PostConvoResponse>(body)
+                                .map_err(ApiError::SerdeDeserializeError)?;
+                            v.push(res);
+                        }
+                    } else if body.starts_with("data: [DONE]") {
+                        break;
+                    }
                 }
-            } else if body.starts_with("data: [DONE]") {
-                break;
-            }
-        }
 
-        Ok(v)
+                Ok(v)
+            }
+            Err(err) => Err(self.err_handle(err, resp).await?),
+        }
     }
 
     pub async fn patch_conversation<'a>(
