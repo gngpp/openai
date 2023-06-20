@@ -109,6 +109,7 @@ impl Launcher {
         let serve = HttpServer::new(move || {
             let app = App::new()
                 .wrap(Logger::default())
+                .service(web::scope("/api"))
                 .service(
                     web::scope("/backend-api")
                         .wrap(middleware::TokenAuthorization)
@@ -135,7 +136,8 @@ impl Launcher {
                     web::scope("/dashboard")
                         .service(get_api_key_list)
                         .service(post_api_key)
-                        .service(post_dashboard_login),
+                        .service(post_dashboard_login)
+                        .service(get_billing_usage),
                 );
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
@@ -302,6 +304,20 @@ async fn get_api_key_list(req: HttpRequest) -> impl Responder {
     response_handle(resp)
 }
 
+///  https://api.openai.com/dashboard/billing/usage?end_date=2022-11-01&start_date=2022-10-01
+#[get("billing/usage")]
+async fn get_billing_usage(req: HttpRequest) -> impl Responder {
+    let resp = client()
+        .get(format!(
+            "{URL_API}/dashboard/billing/usage?{}",
+            req.query_string()
+        ))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await;
+    response_handle(resp)
+}
+
 #[get("/models")]
 async fn get_models(req: HttpRequest) -> impl Responder {
     let resp = client()
@@ -377,7 +393,7 @@ async fn get_conversations<'a>(req: HttpRequest) -> impl Responder {
 #[post("/conversation")]
 async fn post_conversation(req: HttpRequest, mut body: Json<Value>) -> impl Responder {
     if let Some(body) = body.0.as_object_mut() {
-        use crate::api::models::req::{ArkoseToken, GPT4Model};
+        use crate::api::models::{ArkoseToken, GPT4Model};
         let model = body.get("model");
         if let Some(v) = model {
             if let Some(str) = v.as_str() {
