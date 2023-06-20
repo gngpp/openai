@@ -1,5 +1,6 @@
 pub mod api;
 pub mod log;
+pub mod model;
 pub mod oauth;
 pub mod unescape;
 
@@ -28,6 +29,8 @@ pub enum OAuthError {
     FailedPubKeyRequest,
     #[error("failed login")]
     FailedLogin,
+    #[error(transparent)]
+    FailedRequest(#[from] reqwest::Error),
     #[error("failed logged in")]
     FailedLoginIn,
     #[error("failed get code from callback url")]
@@ -52,6 +55,8 @@ pub enum OAuthError {
     MFAFailed,
     #[error("MFA required")]
     MFARequired,
+    #[error("json deserialize error `{0}`")]
+    DeserializeError(String),
 }
 
 #[derive(thiserror::Error, Debug)]

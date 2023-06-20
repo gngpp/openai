@@ -1,16 +1,13 @@
 use std::{ops::Not, path::PathBuf};
 
-use crate::{OAuthError, TokenStoreError};
+use crate::{model::AuthenticateToken, OAuthError, TokenStoreError};
 use anyhow::Context;
-use base64::{engine::general_purpose, Engine};
+
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
-use serde::Deserialize;
-use serde_json::Value;
 
 use std::{collections::HashMap, sync::RwLock};
 
 use async_trait::async_trait;
-use serde::Serialize;
 
 pub const PUBLIC_KEY: &[u8] = "-----BEGIN PUBLIC KEY-----\n\
 MIIC+zCCAeOgAwIBAgIJLlfMWYK8snRdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNVBAM\n\
@@ -47,105 +44,6 @@ pub trait AuthenticateTokenStore: Send + Sync {
 
     // Delete Authenticate Token return an current Token
     async fn delete_token(&mut self, email: &str) -> TokenResult<Option<AuthenticateToken>>;
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AuthenticateToken {
-    access_token: String,
-    refresh_token: String,
-    expires: i64,
-    profile: Profile,
-}
-
-impl AuthenticateToken {
-    pub fn email(&self) -> &str {
-        &self.profile.email
-    }
-
-    pub fn access_token(&self) -> &str {
-        &self.access_token
-    }
-
-    pub fn bearer_access_token(&self) -> String {
-        format!("Bearer {}", &self.access_token)
-    }
-    pub fn refresh_token(&self) -> &str {
-        &self.refresh_token
-    }
-
-    pub fn is_expired(&self) -> bool {
-        chrono::Utc::now().timestamp() > self.expires
-    }
-
-    pub fn profile(&self) -> &Profile {
-        &self.profile
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Profile {
-    pub nickname: String,
-    pub name: String,
-    pub picture: String,
-    pub updated_at: String,
-    pub email_verified: bool,
-    pub email: String,
-    pub iss: String,
-    pub aud: String,
-    pub iat: i64,
-    pub exp: i64,
-    pub sub: String,
-    pub auth_time: i64,
-}
-
-impl TryFrom<String> for Profile {
-    type Error = anyhow::Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        let split_jwt_strings: Vec<_> = value.split('.').collect();
-        let jwt_body = split_jwt_strings
-            .get(1)
-            .ok_or(OAuthError::InvalidAccessToken)?;
-        let decoded_jwt_body = general_purpose::URL_SAFE_NO_PAD.decode(jwt_body)?;
-        let converted_jwt_body = String::from_utf8(decoded_jwt_body)?;
-        let profile = serde_json::from_str::<Profile>(&converted_jwt_body)?;
-        Ok(profile)
-    }
-}
-
-impl TryFrom<crate::oauth::AccessToken> for AuthenticateToken {
-    type Error = anyhow::Error;
-
-    fn try_from(value: crate::oauth::AccessToken) -> Result<Self, Self::Error> {
-        let profile = Profile::try_from(value.id_token)?;
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
-            - chrono::Duration::minutes(5))
-        .timestamp();
-        Ok(Self {
-            access_token: value.access_token,
-            refresh_token: value.refresh_token,
-            expires,
-            profile,
-        })
-    }
-}
-
-impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
-    type Error = anyhow::Error;
-
-    fn try_from(value: crate::oauth::RefreshToken) -> Result<Self, Self::Error> {
-        let profile = Profile::try_from(value.id_token)?;
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
-            - chrono::Duration::minutes(5))
-        .timestamp();
-        Ok(Self {
-            access_token: value.access_token,
-            refresh_token: value.refresh_token,
-            expires,
-            profile,
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -188,7 +86,7 @@ impl AuthenticateTokenStore for MemStore {
             .0
             .write()
             .map_err(|_| TokenStoreError::AccessError)?
-            .insert(token.profile.email.to_string(), token))
+            .insert(token.email().to_string(), token))
     }
 
     async fn get_token(&self, email: &str) -> TokenResult<Option<AuthenticateToken>> {
@@ -243,7 +141,7 @@ impl AuthenticateTokenStore for FileStore {
         &mut self,
         token: AuthenticateToken,
     ) -> TokenResult<Option<AuthenticateToken>> {
-        verify_access_token(&token.access_token)
+        verify_access_token(&token.access_token())
             .await
             .context(TokenStoreError::AccessTokenVerifyError)?;
         let bytes = tokio::fs::read(&self.0).await?;
@@ -252,7 +150,7 @@ impl AuthenticateTokenStore for FileStore {
         } else {
             serde_json::from_slice(&bytes).map_err(|_| TokenStoreError::AccessError)?
         };
-        let v = data.insert(token.profile.email.to_string(), token);
+        let v = data.insert(token.email().to_string(), token);
         let json = serde_json::to_string_pretty(&data)?;
         tokio::fs::write(&self.0, json.as_bytes()).await?;
         Ok(v)
@@ -317,7 +215,7 @@ async fn keys() -> TokenResult<KeyResult> {
 fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
     let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
     let verifier = Verifier::create().build()?;
-    let claims: Value = verifier.verify(token, &alg)?;
+    let claims: serde_json::Value = verifier.verify(token, &alg)?;
     let claims_str = claims.to_string();
     if claims_str.contains("https://openai.openai.auth0app.com/userinfo")
         && claims_str.contains("https://auth0.openai.com/")

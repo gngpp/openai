@@ -1,6 +1,9 @@
 use derive_builder::Builder;
 use serde::Serialize;
 
+use rand::Rng;
+use serde::Serializer;
+
 use super::{Author, Role};
 
 #[derive(Serialize, Builder, Clone)]
@@ -91,12 +94,18 @@ pub struct PostConvoRequest<'a> {
     conversation_id: Option<&'a str>,
     #[builder(default = "false")]
     history_and_training_disabled: bool,
+    #[builder(default)]
+    arkose_token: Option<ArkoseToken>,
 }
 
 impl<'a> TryFrom<PostNextConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostNextConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let ak = match GPT4Model::try_from(value.model) {
+            Ok(_) => Some(ArkoseToken),
+            Err(_) => None,
+        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Next)
             .parent_message_id(value.parent_message_id)
@@ -112,8 +121,8 @@ impl<'a> TryFrom<PostNextConvoRequest<'a>> for PostConvoRequest<'a> {
                 .build()?])
             .model(value.model)
             .conversation_id(value.conversation_id)
+            .arkose_token(ak)
             .build()?;
-
         Ok(body)
     }
 }
@@ -122,11 +131,16 @@ impl<'a> TryFrom<PostContinueConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostContinueConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let ak = match GPT4Model::try_from(value.model) {
+            Ok(_) => Some(ArkoseToken),
+            Err(_) => None,
+        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Continue)
             .conversation_id(value.conversation_id)
             .parent_message_id(value.parent_message_id)
             .model(value.model)
+            .arkose_token(ak)
             .build()?;
 
         Ok(body)
@@ -137,6 +151,10 @@ impl<'a> TryFrom<PostVaraintConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostVaraintConvoRequest<'a>) -> Result<Self, Self::Error> {
+        let ak = match GPT4Model::try_from(value.model) {
+            Ok(_) => Some(ArkoseToken),
+            Err(_) => None,
+        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Variant)
             .conversation_id(value.conversation_id)
@@ -152,6 +170,7 @@ impl<'a> TryFrom<PostVaraintConvoRequest<'a>> for PostConvoRequest<'a> {
                 )
                 .build()?])
             .model(value.model)
+            .arkose_token(ak)
             .build()?;
         Ok(body)
     }
@@ -194,4 +213,54 @@ pub struct PostVaraintConvoRequest<'a> {
     parent_message_id: &'a str,
     /// The session ID must be passed on this interface.
     conversation_id: &'a str,
+}
+
+#[derive(PartialEq, Eq)]
+pub enum GPT4Model {
+    Gpt4model,
+    Gpt4browsingModel,
+    Gpt4pluginsModel,
+}
+
+impl TryFrom<&str> for GPT4Model {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "gpt-4" => Ok(GPT4Model::Gpt4model),
+            "gpt-4-browsing" => Ok(GPT4Model::Gpt4browsingModel),
+            "gpt-4-plugins" => Ok(GPT4Model::Gpt4pluginsModel),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ArkoseToken;
+
+impl Serialize for ArkoseToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let random_number = || -> u32 {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(1..=100) + 1
+        };
+        let random_string = |length: usize| -> String {
+            let charset: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+            let mut rng = rand::thread_rng();
+
+            let result: String = (0..length)
+                .map(|_| {
+                    let random_index = rng.gen_range(0..charset.len());
+                    charset[random_index] as char
+                })
+                .collect();
+
+            result
+        };
+        serializer.serialize_str( &format!("{}.{}|r=us-east-1|meta=3|meta_width=300|metabgclr=transparent|metaiconclr=%%23555555|guitextcolor=%%23000000|pk={}|at=40|rid={}|ag=101|cdn_url=https%%3A%%2F%%2Ftcr9i.chat.openai.com%%2Fcdn%%2Ffc|lurl=https%%3A%%2F%%2Faudio-us-east-1.arkoselabs.com|surl=https%%3A%%2F%%2Ftcr9i.chat.openai.com|smurl=https%%3A%%2F%%2Ftcr9i.chat.openai.com%%2Fcdn%%2Ffc%%2Fassets%%2Fstyle-manager",
+        random_string(7), random_string(10), "35536E1E-65B4-4D96-9D97-6ADB7EFF8147", random_number()))
+    }
 }
