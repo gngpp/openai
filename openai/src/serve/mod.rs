@@ -134,10 +134,11 @@ impl Launcher {
                 )
                 .service(
                     web::scope("/dashboard")
-                        .service(get_api_key_list)
-                        .service(post_api_key)
                         .service(post_dashboard_login)
-                        .service(get_billing_usage),
+                        .service(post_api_key)
+                        .service(get_api_key_list)
+                        .service(get_billing_usage)
+                        .service(get_billing_credit_grants),
                 );
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
@@ -304,7 +305,7 @@ async fn get_api_key_list(req: HttpRequest) -> impl Responder {
     response_handle(resp)
 }
 
-///  https://api.openai.com/dashboard/billing/usage?end_date=2022-11-01&start_date=2022-10-01
+/// https://api.openai.com/dashboard/billing/usage?end_date=2022-11-01&start_date=2022-10-01
 #[get("billing/usage")]
 async fn get_billing_usage(req: HttpRequest) -> impl Responder {
     let resp = client()
@@ -312,6 +313,16 @@ async fn get_billing_usage(req: HttpRequest) -> impl Responder {
             "{URL_API}/dashboard/billing/usage?{}",
             req.query_string()
         ))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await;
+    response_handle(resp)
+}
+
+#[get("billing/credit_grants")]
+async fn get_billing_credit_grants(req: HttpRequest) -> impl Responder {
+    let resp = client()
+        .get(format!("{URL_API}/dashboard/billing/credit_grants"))
         .headers(header_convert(req.headers()))
         .send()
         .await;
