@@ -18,9 +18,10 @@ use rand::Rng;
 use reqwest::{Client, Proxy, StatusCode, Url};
 use sha2::{Digest, Sha256};
 
-use crate::api::ApiError;
-use crate::token::AuthenticateToken;
-use crate::{debug, token, OAuthError, OAuthResult};
+use crate::model::{
+    AuthenticateApiKey, AuthenticateApiKeyList, AuthenticateSession, AuthenticateToken,
+};
+use crate::{debug, OAuthError, OAuthResult};
 
 const HEADER_UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
@@ -30,6 +31,7 @@ const OPENAI_OAUTH_REVOKE_URL: &str = "https://auth0.openai.com/oauth/revoke";
 const OPENAI_OAUTH_CALLBACK_URL: &str =
     "com.openai.chat://auth0.openai.com/ios/com.openai.chat/callback";
 
+const OPENAI_API_URL: &str = "https://api.openai.com";
 /// You do **not** have to wrap the `Client` in an [`Rc`] or [`Arc`] to **reuse** it,
 /// because it already uses an [`Arc`] internally.
 ///
@@ -41,6 +43,73 @@ pub struct OAuthClient {
 }
 
 impl OAuthClient {
+    pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<AuthenticateSession> {
+        let resp = self
+            .client
+            .post(format!("{OPENAI_API_URL}/dashboard/onboarding/login"))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(OAuthError::FailedRequest)?;
+        self.response_handle(resp).await
+    }
+
+    pub async fn do_get_api_key(
+        &self,
+        sensitive_id: &str,
+        name: &str,
+    ) -> OAuthResult<AuthenticateApiKey> {
+        let data = ApiKeyDataBuilder::default()
+            .action("create")
+            .name(name)
+            .build()?;
+        let resp = self
+            .client
+            .post(format!("{OPENAI_API_URL}/dashboard/user/api_keys"))
+            .bearer_auth(sensitive_id)
+            .json(&data)
+            .send()
+            .await
+            .map_err(OAuthError::FailedRequest)?;
+        self.response_handle(resp).await
+    }
+
+    pub async fn do_get_api_key_list(
+        &self,
+        sensitive_id: &str,
+    ) -> OAuthResult<AuthenticateApiKeyList> {
+        let resp = self
+            .client
+            .get(format!("{OPENAI_API_URL}/dashboard/user/api_keys"))
+            .bearer_auth(sensitive_id)
+            .send()
+            .await
+            .map_err(OAuthError::FailedRequest)?;
+        self.response_handle(resp).await
+    }
+
+    pub async fn do_delete_api_key(
+        &self,
+        sensitive_id: &str,
+        redacted_key: &str,
+        created_at: u64,
+    ) -> OAuthResult<AuthenticateApiKey> {
+        let data = ApiKeyDataBuilder::default()
+            .action("delete")
+            .redacted_key(redacted_key)
+            .created_at(created_at)
+            .build()?;
+        let resp = self
+            .client
+            .post(format!("{OPENAI_API_URL}/dashboard/user/api_keys"))
+            .bearer_auth(sensitive_id)
+            .json(&data)
+            .send()
+            .await
+            .map_err(OAuthError::FailedRequest)?;
+        self.response_handle(resp).await
+    }
+
     pub async fn do_access_token(
         &mut self,
         account: OAuthAccount,
@@ -61,7 +130,8 @@ impl OAuthClient {
                 HeaderValue::from_static(OPENAI_OAUTH_URL),
             )
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
         let url = resp.url().clone();
 
         self.response_handle_unit(resp)
@@ -126,7 +196,8 @@ impl OAuthClient {
             .header(reqwest::header::REFERER, HeaderValue::from_str(referrer)?)
             .json(&data)
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
 
         let headers = resp.headers().clone();
         self.response_handle_unit(resp)
@@ -154,7 +225,8 @@ impl OAuthClient {
             .get(&format!("{OPENAI_OAUTH_URL}{location}"))
             .header(reqwest::header::REFERER, HeaderValue::from_str(referrer)?)
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
 
         let headers = resp.headers().clone();
 
@@ -200,7 +272,8 @@ impl OAuthClient {
                 HeaderValue::from_static(OPENAI_OAUTH_URL),
             )
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
         let headers = resp.headers().clone();
 
         self.response_handle_unit(resp).await?;
@@ -217,7 +290,7 @@ impl OAuthClient {
         &mut self,
         code_verifier: &str,
         callback_url: &str,
-    ) -> OAuthResult<token::AuthenticateToken> {
+    ) -> OAuthResult<AuthenticateToken> {
         let url = Url::parse(callback_url)?;
         let code = Self::get_callback_code(&url)?;
         let data = AuthorizationCodeDataBuilder::default()
@@ -233,7 +306,8 @@ impl OAuthClient {
             .post(OPENAI_OAUTH_TOKEN_URL)
             .json(&data)
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
 
         let access_token = self.response_handle::<AccessToken>(resp).await?;
         Ok(AuthenticateToken::try_from(access_token)?)
@@ -272,7 +346,8 @@ impl OAuthClient {
             .post(OPENAI_OAUTH_REVOKE_URL)
             .json(&data)
             .send()
-            .await?;
+            .await
+            .map_err(OAuthError::FailedRequest)?;
 
         self.response_handle_unit(resp).await
     }
@@ -282,12 +357,11 @@ impl OAuthClient {
         resp: reqwest::Response,
     ) -> OAuthResult<U> {
         let url = resp.url().clone();
-
         match resp.error_for_status_ref() {
             Ok(_) => Ok(resp
                 .json::<U>()
                 .await
-                .map_err(ApiError::JsonReqwestDeserializeError)?),
+                .map_err(|op| OAuthError::DeserializeError(op.to_string()))?),
             Err(err) => {
                 let err_msg = format!("error: {}, url: {}", resp.text().await?, url);
                 bail!(self.handle_error(err.status(), err_msg).await)
@@ -308,7 +382,7 @@ impl OAuthClient {
     }
 
     async fn handle_error(&self, status: Option<StatusCode>, err_msg: String) -> OAuthError {
-        debug!("error msg: {err_msg}");
+        debug!("{err_msg}");
         match status {
             Some(
                 status_code @ (StatusCode::UNAUTHORIZED
@@ -365,6 +439,8 @@ impl OAuthClient {
                 .or_insert(vec![value]);
         });
 
+        debug!("get_callback_code: {:?}", url_params);
+
         if let Some(error) = url_params.get("error") {
             if let Some(error_description) = url_params.get("error_description") {
                 let msg = format!("{}: {}", error[0], error_description[0]);
@@ -383,15 +459,28 @@ impl OAuthClient {
 
     fn get_callback_state(url: &Url) -> String {
         let url_params = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
+        debug!("get_callback_state: {:?}", url_params);
         url_params["state"].to_owned()
     }
 
     fn get_location_path(header: &HeaderMap<HeaderValue>) -> OAuthResult<&str> {
+        debug!("get_location_path: {:?}", header);
         Ok(header
             .get("Location")
             .ok_or(OAuthError::InvalidLocation)?
             .to_str()?)
     }
+}
+
+#[derive(Serialize, Builder)]
+pub struct ApiKeyData<'a> {
+    action: &'a str,
+    #[builder(setter(into, strip_option), default)]
+    name: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    redacted_key: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    created_at: Option<u64>,
 }
 
 #[derive(Serialize, Builder)]

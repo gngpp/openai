@@ -25,7 +25,7 @@ use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;
 use crate::{info, oauth};
 
-use super::api::{HEADER_UA, URL_CHATGPT_BACKEND, URL_CHATGPT_PUBLIC};
+use super::api::{HEADER_UA, URL_API, URL_CHATGPT_BACKEND, URL_CHATGPT_PUBLIC};
 
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;
@@ -127,9 +127,15 @@ impl Launcher {
                 .service(web::scope("/public-api").service(get_conversation_limit))
                 .service(
                     web::scope("/oauth")
-                        .service(do_access_token)
-                        .service(do_refresh_token)
-                        .service(do_revoke_token),
+                        .service(post_access_token)
+                        .service(post_refresh_token)
+                        .service(post_revoke_token),
+                )
+                .service(
+                    web::scope("/dashboard")
+                        .service(get_api_key_list)
+                        .service(post_api_key)
+                        .service(post_dashboard_login),
                 );
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
@@ -222,7 +228,7 @@ impl Launcher {
 }
 
 #[post("/token")]
-async fn do_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
+async fn post_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
     match oauth_client().do_access_token(account.into_inner()).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => response_oauth_bad_handle(&err.to_string()),
@@ -230,7 +236,7 @@ async fn do_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
 }
 
 #[post("/refresh_token")]
-async fn do_refresh_token(req: HttpRequest) -> impl Responder {
+async fn post_refresh_token(req: HttpRequest) -> impl Responder {
     if let Some(token) = req.headers().get(header::AUTHORIZATION) {
         match token.to_str() {
             Ok(token_val) => {
@@ -248,7 +254,7 @@ async fn do_refresh_token(req: HttpRequest) -> impl Responder {
 }
 
 #[post("/revoke_token")]
-async fn do_revoke_token(req: HttpRequest) -> impl Responder {
+async fn post_revoke_token(req: HttpRequest) -> impl Responder {
     if let Some(token) = req.headers().get(header::AUTHORIZATION) {
         match token.to_str() {
             Ok(token_val) => {
@@ -265,109 +271,118 @@ async fn do_revoke_token(req: HttpRequest) -> impl Responder {
     }
 }
 
+#[post("/onboarding/login")]
+async fn post_dashboard_login(req: HttpRequest) -> impl Responder {
+    let resp = client()
+        .post(format!("{URL_API}/dashboard/onboarding/login"))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await;
+    response_handle(resp)
+}
+
+#[post("/user/api_keys")]
+async fn post_api_key(req: HttpRequest, body: Json<Value>) -> impl Responder {
+    let resp = client()
+        .post(format!("{URL_API}/dashboard/user/api_keys"))
+        .headers(header_convert(req.headers()))
+        .json(&body.0)
+        .send()
+        .await;
+    response_handle(resp)
+}
+
+#[get("/user/api_keys")]
+async fn get_api_key_list(req: HttpRequest) -> impl Responder {
+    let resp = client()
+        .get(format!("{URL_API}/dashboard/user/api_keys"))
+        .headers(header_convert(req.headers()))
+        .send()
+        .await;
+    response_handle(resp)
+}
+
 #[get("/models")]
 async fn get_models(req: HttpRequest) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!(
             "{URL_CHATGPT_BACKEND}/models?{}",
             req.query_string()
         ))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[get("/accounts/check")]
 async fn get_account_check(req: HttpRequest) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!("{URL_CHATGPT_BACKEND}/accounts/check"))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[get("/accounts/check/v4-2023-04-27")]
 async fn get_account_check_v4(req: HttpRequest) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!(
             "{URL_CHATGPT_BACKEND}/accounts/check/v4-2023-04-27"
         ))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 /// chatgpt plus
 #[get("/settings/beta_features")]
 async fn get_settings_beta_features(req: HttpRequest) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!("{URL_CHATGPT_BACKEND}/settings/beta_features"))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[get("/conversation/{conversation_id}")]
 async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!(
             "{URL_CHATGPT_BACKEND}/conversation/{}",
             conversation_id.into_inner()
         ))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[get("/conversations")]
-async fn get_conversations(req: HttpRequest, param: web::Query<ConvosQuery>) -> impl Responder {
-    let param = param.into_inner();
-    match client()
+async fn get_conversations<'a>(req: HttpRequest) -> impl Responder {
+    let resp = client()
         .get(format!(
-            "{URL_CHATGPT_BACKEND}/conversations?offset={}&limit={}&order={}",
-            param.offset, param.limit, param.order
+            "{URL_CHATGPT_BACKEND}/conversations?{}",
+            req.query_string()
         ))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[post("/conversation")]
 async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    match client()
+    let resp = client()
         .post(format!("{URL_CHATGPT_BACKEND}/conversation"))
         .headers(header_convert(req.headers()))
-        .json(&body)
+        .json(&body.0)
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[patch("/conversation/{conversation_id}")]
@@ -376,32 +391,26 @@ async fn patch_conversation(
     conversation_id: web::Path<String>,
     body: Json<Value>,
 ) -> impl Responder {
-    match client()
+    let resp = client()
         .patch(format!(
             "{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"
         ))
         .headers(header_convert(req.headers()))
-        .json(&body)
+        .json(&body.0)
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[patch("/conversations")]
 async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    match client()
+    let resp = client()
         .patch(format!("{URL_CHATGPT_BACKEND}/conversations"))
         .headers(header_convert(req.headers()))
-        .json(&body)
+        .json(&body.0)
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[post("/conversation/gen_title/{conversation_id}")]
@@ -410,47 +419,38 @@ async fn post_conversation_gen_title(
     conversation_id: web::Path<String>,
     body: Json<Value>,
 ) -> impl Responder {
-    match client()
+    let resp = client()
         .post(format!(
             "{URL_CHATGPT_BACKEND}/conversation/gen_title/{conversation_id}"
         ))
         .headers(header_convert(req.headers()))
-        .json(&body)
+        .json(&body.0)
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[post("/conversation/message_feedbak")]
 async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    match client()
+    let resp = client()
         .post(format!(
             "{URL_CHATGPT_BACKEND}/conversation/message_feedbak"
         ))
         .headers(header_convert(req.headers()))
-        .json(&body)
+        .json(&body.0)
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 #[get("/conversation_limit")]
 async fn get_conversation_limit(req: HttpRequest) -> impl Responder {
-    match client()
+    let resp = client()
         .get(format!("{URL_CHATGPT_PUBLIC}/conversation_limit"))
         .headers(header_convert(req.headers()))
         .send()
-        .await
-    {
-        Ok(resp) => response_handle(resp),
-        Err(err) => response_internal_server_handle(err),
-    }
+        .await;
+    response_handle(resp)
 }
 
 fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::header::HeaderMap {
@@ -464,44 +464,20 @@ fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::head
         .collect()
 }
 
-fn response_internal_server_handle(err: reqwest::Error) -> HttpResponse {
-    HttpResponse::InternalServerError().json(err.to_string())
-}
-
 fn response_oauth_bad_handle(msg: &str) -> HttpResponse {
     HttpResponse::BadRequest().json(msg)
 }
 
-fn response_handle(resp: reqwest::Response) -> HttpResponse {
-    let status = resp.status();
-    let mut builder = HttpResponse::build(status);
-    resp.headers().into_iter().for_each(|kv| {
-        builder.insert_header(kv);
-    });
-    builder.streaming(resp.bytes_stream())
-}
-
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct ConvosQuery {
-    #[serde(default = "ConvosQuery::default_offset")]
-    offset: u32,
-    #[serde(default = "ConvosQuery::default_limit")]
-    limit: u32,
-    #[serde(default = "ConvosQuery::default_order")]
-    order: String,
-}
-
-impl ConvosQuery {
-    fn default_offset() -> u32 {
-        0
-    }
-    fn default_limit() -> u32 {
-        20
-    }
-
-    fn default_order() -> String {
-        String::from("updated")
+fn response_handle(resp: Result<reqwest::Response, reqwest::Error>) -> HttpResponse {
+    match resp {
+        Ok(resp) => {
+            let status = resp.status();
+            let mut builder = HttpResponse::build(status);
+            resp.headers().into_iter().for_each(|kv| {
+                builder.insert_header(kv);
+            });
+            builder.streaming(resp.bytes_stream())
+        }
+        Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
     }
 }
