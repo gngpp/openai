@@ -375,7 +375,25 @@ async fn get_conversations<'a>(req: HttpRequest) -> impl Responder {
 }
 
 #[post("/conversation")]
-async fn post_conversation(req: HttpRequest, body: Json<Value>) -> impl Responder {
+async fn post_conversation(req: HttpRequest, mut body: Json<Value>) -> impl Responder {
+    if let Some(body) = body.0.as_object_mut() {
+        use crate::api::models::req::{ArkoseToken, GPT4Model};
+        let model = body.get("model");
+        if let Some(v) = model {
+            if let Some(str) = v.as_str() {
+                if GPT4Model::try_from(str).is_ok() {
+                    match serde_json::to_value(ArkoseToken) {
+                        Ok(x) => {
+                            let _ = body.insert("arkose_token".to_owned(), x);
+                        }
+                        Err(err) => {
+                            return HttpResponse::InternalServerError().json(err.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let resp = client()
         .post(format!("{URL_CHATGPT_BACKEND}/conversation"))
         .headers(header_convert(req.headers()))
