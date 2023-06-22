@@ -1,0 +1,172 @@
+@hostname = 127.0.0.1
+@port = 7999
+@host = {{hostname}}:{{port}}
+@access_token=
+@refresh_token=
+@email=
+@password=
+@session_id=
+@bearer_token=Bearer {{access_token}}
+@bearer_refresh_token=Bearer {{refresh_token}}
+@bearer_session_id=Bearer {{session_id}}
+
+/// oauth ///
+### you may need the MFA parameter to log in
+POST http://{{host}}/oauth/token
+Content-Type: application/json
+
+{
+    "email": "{{email}}",
+    "password": "{{password}}"
+}
+
+### 
+POST http://{{host}}/oauth/refresh_token
+Authorization: {{bearer_refresh_token}}
+
+###
+POST http://{{host}}/oauth/revoke_token
+Authorization: {{bearer_refresh_token}}
+
+/// dashboard ///
+### 
+POST http://{{host}}/dashboard/onboarding/login
+Authorization: {{bearer_token}}
+
+###
+POST http://{{host}}/dashboard/user/api_keys
+Authorization: {{bearer_session_id}}
+Content-Type: application/json
+
+{
+    "action":"create",
+    "name":"opengpt"
+}
+
+### 
+POST http://{{host}}/dashboard/user/api_keys
+Authorization: {{bearer_session_id}}
+Content-Type: application/json
+
+{
+    "action":"delete",
+    "redacted_key":"sk-M4dpz***************************************L1o3",
+    "created_at":1687341651
+}
+
+###
+GET http://{{host}}/dashboard/user/api_keys
+Authorization: {{bearer_session_id}}
+
+###
+GET http://{{host}}/dashboard/billing/usage?end_date=2023-7-1&start_date=2023-5-01
+Authorization: {{bearer_session_id}}
+
+### 
+GET http://{{host}}/dashboard/billing/credit_grants
+Authorization: {{bearer_session_id}}
+
+/// backend-api ///
+### get models
+GET http://{{host}}/backend-api/models?history_and_training_disabled=false
+Authorization: {{bearer_token}}
+
+### check account status
+GET http://{{host}}/backend-api/accounts/check
+Authorization: {{bearer_token}}
+
+### check account status
+GET http://{{host}}/backend-api/accounts/check/v4-2023-04-27
+Authorization: {{bearer_token}}
+
+### maybe need chatgpt plus
+GET http://{{host}}/backend-api/settings/beta_features
+Authorization: {{bearer_token}}
+
+### get conversation by id
+GET http://{{host}}/backend-api/conversation/5ae8355a-82a8-4ded-b0e4-ea5dc11b4a9f
+Authorization: {{bearer_token}}
+
+### get conversation limit
+GET http://{{host}}/public-api/conversation_limit
+
+### get conversation list
+GET http://{{host}}/backend-api/conversations?offset=0&limit=3&order=updated
+Authorization: {{bearer_token}}
+
+### new conversation
+POST http://{{host}}/backend-api/conversation
+Authorization: {{bearer_token}}
+Content-Type: application/json
+Accept: text/event-stream
+
+{
+  "action": "next",
+  "messages": [
+    {
+      "id": "{{$guid}}",
+      "author": {
+        "role": "user"
+      },
+      "content": {
+        "content_type": "text",
+        "parts": [
+          "new conversation"
+        ]
+      },
+      "metadata": {}
+    }
+  ],
+  "model": "text-davinci-002-render-sha-mobile",
+  "parent_message_id": "{{$guid}}",
+  "timezone_offset_min": -480,
+  "history_and_training_disabled": false
+}
+
+
+### change conversation title by id
+PATCH http://{{host}}/backend-api/conversation/5ae8355a-82a8-4ded-b0e4-ea5dc11b4a9f
+Authorization: {{bearer_token}}
+Content-Type: application/json
+
+{
+    "title": "New Test"
+}
+
+### generate conversation title
+POST http://{{host}}/backend-api/conversation/gen_title/5ae8355a-82a8-4ded-b0e4-ea5dc11b4a9f
+Authorization: {{bearer_token}}
+Content-Type: application/json
+
+{
+    "message_id": "1646facc-08a6-465f-ba08-58cec1e31ed6"
+}
+
+### clear conversation by id
+PATCH http://{{host}}/backend-api/conversation/5ae8355a-82a8-4ded-b0e4-ea5dc11b4a9f
+Authorization: {{bearer_token}}
+Content-Type: application/json
+
+{
+    "is_visible": false
+}
+
+### clear conversations
+PATCH http://{{host}}/backend-api/conversations
+Authorization: {{bearer_token}}
+Content-Type: application/json
+
+{
+    "is_visible": false
+}
+
+### conversation message feedbak
+POST http://{{host}}/backend-api/conversation/message_feedback
+Authorization: {{bearer_token}}
+Content-Type: application/json
+
+{
+    "message_id": "1646facc-08a6-465f-ba08-58cec1e31ed6",
+    "conversation_id": "5ae8355a-82a8-4ded-b0e4-ea5dc11b4a9f",
+    "rating": "ThumbsUp"
+}
