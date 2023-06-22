@@ -50,3 +50,6 @@ Options:
   -h, --help
           Print help
 ```
+
+### Reference
+- https://github.com/tjardoo/openai-client
