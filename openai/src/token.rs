@@ -235,7 +235,7 @@ pub async fn verify_access_token_for_u8(token: &[u8]) -> TokenResult<()> {
 
 pub async fn verify_access_token(token: &str) -> TokenResult<()> {
     let token = token.trim_start_matches("Bearer ");
-    if token.starts_with("sk-") {
+    if token.starts_with("sk-") || token.starts_with("sess-") {
         return Ok(());
     }
     match verify(token, PUBLIC_KEY, AlgorithmID::RS256) {
