@@ -480,7 +480,7 @@ impl OpenGPTBuilder {
         );
 
         let client = reqwest::ClientBuilder::new()
-            .chrome_builder(browser::ChromeVersion::V105)
+            .chrome_builder(browser::ChromeVersion::V108)
             .cookie_store(true)
             .default_headers(req_headers);
 

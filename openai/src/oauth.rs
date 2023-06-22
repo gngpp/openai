@@ -676,6 +676,7 @@ impl OAuthClientBuilder {
 
     pub fn builder() -> OAuthClientBuilder {
         let client_builder = Client::builder()
+            .chrome_builder(reqwest::browser::ChromeVersion::V108)
             .user_agent(HEADER_UA)
             .redirect(Policy::custom(|attempt| {
                 if attempt
