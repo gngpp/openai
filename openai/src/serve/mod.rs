@@ -351,7 +351,7 @@ fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::head
 fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
     if req.uri().path().contains("/backend-api/conversation") && req.method().as_str() == "POST" {
         if let Some(body) = body.as_mut().and_then(|b| b.as_object_mut()) {
-            use crate::api::models::{ArkoseToken, GPT4Model};
+            use crate::api::opengpt::models::{ArkoseToken, GPT4Model};
             if let Some(v) = body.get("model").and_then(|m| m.as_str()) {
                 if GPT4Model::try_from(v).is_ok() {
                     if let Ok(x) = serde_json::to_value(ArkoseToken) {

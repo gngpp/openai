@@ -1,0 +1,15 @@
+pub mod audio;
+pub mod chat_completion;
+#[cfg(feature = "stream")]
+pub mod chat_completion_stream;
+pub mod completion;
+#[cfg(feature = "stream")]
+pub mod completion_stream;
+pub mod edit;
+pub mod embedding;
+pub mod file;
+pub mod fine_tune;
+pub mod image;
+pub mod model;
+pub mod moderation;
+pub mod shared;
