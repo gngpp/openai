@@ -2,7 +2,7 @@ use std::time;
 
 use futures_util::StreamExt;
 use openai::{
-    api::models::req::{self, PostConvoRequest},
+    api::opengpt::models::req::{self, PostConvoRequest},
     oauth::OAuthAccountBuilder,
 };
 use tokio::io::AsyncWriteExt;
@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         .prompt("Zig Example")
         .build()?;
 
-    let mut resp: openai::api::PostConvoStreamResponse = api
+    let mut resp: openai::api::opengpt::PostConvoStreamResponse = api
         .post_conversation(PostConvoRequest::try_from(req)?)
         .await?;
 
