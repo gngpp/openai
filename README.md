@@ -18,6 +18,9 @@ git clone https://github.com/gngpp/opengpt.git && cd opengpt
 ### Http Server
 
 - Support unofficial/official forward proxy forwarding
+- The API prefix is the same as the official one, just change the hostname
+> - official https://platform.openai.com/docs/api-reference
+> - unofficial [doc](doc/rest.http)
 
 ```shell
 $ opengpt --help
