@@ -16,6 +16,9 @@ git clone https://github.com/gngpp/opengpt.git && cd opengpt
 ```
 
 ### Http Server
+
+- Support unofficial/official forward proxy forwarding
+
 ```shell
 $ opengpt --help
 Start the http server
