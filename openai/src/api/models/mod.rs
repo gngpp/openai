@@ -55,6 +55,7 @@ impl TryFrom<&str> for GPT4Model {
     }
 }
 
+/// curl 'https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147' --data-raw 'public_key=35536E1E-65B4-4D96-9D97-6ADB7EFF8147'
 #[derive(Clone)]
 pub struct ArkoseToken;
 
