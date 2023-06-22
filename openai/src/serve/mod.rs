@@ -7,7 +7,7 @@ pub mod tokenbucket;
 use actix_web::http::header;
 use actix_web::middleware::Logger;
 use actix_web::web::Json;
-use actix_web::{get, patch, post, App, HttpResponse, HttpServer, Responder};
+use actix_web::{post, App, HttpResponse, HttpServer, Responder};
 use actix_web::{web, HttpRequest};
 use derive_builder::Builder;
 use reqwest::Client;
@@ -23,9 +23,9 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;
-use crate::{info, oauth};
+use crate::{error, info, oauth};
 
-use super::api::{HEADER_UA, URL_API, URL_CHATGPT_BACKEND, URL_CHATGPT_PUBLIC};
+use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
 
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;
@@ -81,9 +81,9 @@ impl Launcher {
             header::USER_AGENT,
             header::HeaderValue::from_static(HEADER_UA),
         );
-        let client = reqwest::ClientBuilder::new()
-            .chrome_builder(reqwest::browser::ChromeVersion::V105)
+        let client = reqwest::Client::builder()
             .default_headers(headers)
+            .chrome_builder(reqwest::browser::ChromeVersion::V105)
             .tcp_keepalive(Some(self.tcp_keepalive))
             .pool_max_idle_per_host(self.workers)
             .cookie_store(false)
@@ -109,23 +109,6 @@ impl Launcher {
         let serve = HttpServer::new(move || {
             let app = App::new()
                 .wrap(Logger::default())
-                .service(web::scope("/api"))
-                .service(
-                    web::scope("/backend-api")
-                        .wrap(middleware::TokenAuthorization)
-                        .service(get_models)
-                        .service(get_account_check)
-                        .service(get_account_check_v4)
-                        .service(get_settings_beta_features)
-                        .service(get_conversation)
-                        .service(get_conversations)
-                        .service(post_conversation)
-                        .service(post_conversation_gen_title)
-                        .service(post_conversation_message_feedback)
-                        .service(patch_conversation)
-                        .service(patch_conversations),
-                )
-                .service(web::scope("/public-api").service(get_conversation_limit))
                 .service(
                     web::scope("/oauth")
                         .service(post_access_token)
@@ -133,13 +116,21 @@ impl Launcher {
                         .service(post_revoke_token),
                 )
                 .service(
-                    web::scope("/dashboard")
-                        .service(post_dashboard_login)
-                        .service(post_api_key)
-                        .service(get_api_key_list)
-                        .service(get_billing_usage)
-                        .service(get_billing_credit_grants),
-                );
+                    web::resource("/dashboard/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(official_proxy)),
+                )
+                .service(
+                    web::resource("/v1/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(official_proxy)),
+                )
+                .service(
+                    web::resource("/backend-api/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(unofficial_proxy)),
+                )
+                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)));
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
             {
@@ -240,273 +231,122 @@ async fn post_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder
 
 #[post("/refresh_token")]
 async fn post_refresh_token(req: HttpRequest) -> impl Responder {
-    if let Some(token) = req.headers().get(header::AUTHORIZATION) {
-        match token.to_str() {
+    match req.headers().get(header::AUTHORIZATION) {
+        Some(token) => match token.to_str() {
             Ok(token_val) => {
-                let token_val = token_val.trim_start_matches("Bearer ");
-                match oauth_client().do_refresh_token(token_val).await {
+                let refresh_token = token_val.trim_start_matches("Bearer ");
+                match oauth_client().do_refresh_token(refresh_token).await {
                     Ok(token) => HttpResponse::Ok().json(token),
                     Err(err) => response_oauth_bad_handle(&err.to_string()),
                 }
             }
             Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
-        }
-    } else {
-        HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#)
+        },
+        None => HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#),
     }
 }
 
 #[post("/revoke_token")]
 async fn post_revoke_token(req: HttpRequest) -> impl Responder {
-    if let Some(token) = req.headers().get(header::AUTHORIZATION) {
-        match token.to_str() {
+    match req.headers().get(header::AUTHORIZATION) {
+        Some(token) => match token.to_str() {
             Ok(token_val) => {
-                let token_val = token_val.trim_start_matches("Bearer ");
-                match oauth_client().do_revoke_token(token_val).await {
+                let refresh_token = token_val.trim_start_matches("Bearer ");
+                match oauth_client().do_revoke_token(refresh_token).await {
                     Ok(_) => HttpResponse::Ok().finish(),
                     Err(err) => response_oauth_bad_handle(&err.to_string()),
                 }
             }
             Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
-        }
-    } else {
-        HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#)
+        },
+        None => HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#),
     }
 }
 
-#[post("/onboarding/login")]
-async fn post_dashboard_login(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .post(format!("{URL_API}/dashboard/onboarding/login"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
+/// match path /dashboard/{tail.*}
+/// POST https://api.openai.com/dashboard/onboarding/login"
+/// POST https://api.openai.com/dashboard/user/api_keys
+/// GET https://api.openai.com/dashboard/user/api_keys
+/// POST https://api.openai.com/dashboard/billing/usage
+/// POST https://api.openai.com/dashboard/billing/credit_grants
+///
+/// platform API match path /v1/{tail.*}
+/// reference: https://platform.openai.com/docs/api-reference
+/// GET https://api.openai.com/v1/models
+/// GET https://api.openai.com/v1/models/{model}
+/// POST https://api.openai.com/v1/chat/completions
+/// POST https://api.openai.com/v1/completions
+/// POST https://api.openai.com/v1/edits
+/// POST https://api.openai.com/v1/images/generations
+/// POST https://api.openai.com/v1/images/edits
+/// POST https://api.openai.com/v1/images/variations
+/// POST https://api.openai.com/v1/embeddings
+/// POST https://api.openai.com/v1/audio/transcriptions
+/// POST https://api.openai.com/v1/audio/translations
+/// GET https://api.openai.com/v1/files
+/// POST https://api.openai.com/v1/files
+/// DELETE https://api.openai.com/v1/files/{file_id}
+/// GET https://api.openai.com/v1/files/{file_id}
+/// GET https://api.openai.com/v1/files/{file_id}/content
+/// POST https://api.openai.com/v1/fine-tunes
+/// GET https://api.openai.com/v1/fine-tunes
+/// GET https://api.openai.com/v1/fine-tunes/{fine_tune_id}
+/// POST https://api.openai.com/v1/fine-tunes/{fine_tune_id}/cancel
+/// GET https://api.openai.com/v1/fine-tunes/{fine_tune_id}/events
+/// DELETE https://api.openai.com/v1/models/{model}
+/// POST https://api.openai.com/v1/moderations
+/// Deprecated GET https://api.openai.com/v1/engines
+/// Deprecated GET https://api.openai.com/v1/engines/{engine_id}
+async fn official_proxy(req: HttpRequest, body: Option<Json<Value>>) -> impl Responder {
+    let builder = client()
+        .request(
+            req.method().clone(),
+            format!("{URL_PLATFORM_API}{}", req.uri()),
+        )
+        .headers(header_convert(req.headers()));
+    let resp = match body {
+        Some(body) => builder.json(&body).send().await,
+        None => builder.send().await,
+    };
     response_handle(resp)
 }
 
-#[post("/user/api_keys")]
-async fn post_api_key(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    let resp = client()
-        .post(format!("{URL_API}/dashboard/user/api_keys"))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/user/api_keys")]
-async fn get_api_key_list(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!("{URL_API}/dashboard/user/api_keys"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-/// https://api.openai.com/dashboard/billing/usage?end_date=2022-11-01&start_date=2022-10-01
-#[get("billing/usage")]
-async fn get_billing_usage(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!(
-            "{URL_API}/dashboard/billing/usage?{}",
-            req.query_string()
-        ))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("billing/credit_grants")]
-async fn get_billing_credit_grants(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!("{URL_API}/dashboard/billing/credit_grants"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/models")]
-async fn get_models(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!(
-            "{URL_CHATGPT_BACKEND}/models?{}",
-            req.query_string()
-        ))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/accounts/check")]
-async fn get_account_check(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!("{URL_CHATGPT_BACKEND}/accounts/check"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/accounts/check/v4-2023-04-27")]
-async fn get_account_check_v4(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!(
-            "{URL_CHATGPT_BACKEND}/accounts/check/v4-2023-04-27"
-        ))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-/// chatgpt plus
-#[get("/settings/beta_features")]
-async fn get_settings_beta_features(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!("{URL_CHATGPT_BACKEND}/settings/beta_features"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/conversation/{conversation_id}")]
-async fn get_conversation(req: HttpRequest, conversation_id: web::Path<String>) -> impl Responder {
-    let resp = client()
-        .get(format!(
-            "{URL_CHATGPT_BACKEND}/conversation/{}",
-            conversation_id.into_inner()
-        ))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/conversations")]
-async fn get_conversations<'a>(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!(
-            "{URL_CHATGPT_BACKEND}/conversations?{}",
-            req.query_string()
-        ))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[post("/conversation")]
-async fn post_conversation(req: HttpRequest, mut body: Json<Value>) -> impl Responder {
-    if let Some(body) = body.0.as_object_mut() {
-        use crate::api::models::{ArkoseToken, GPT4Model};
-        let model = body.get("model");
-        if let Some(v) = model {
-            if let Some(str) = v.as_str() {
-                if GPT4Model::try_from(str).is_ok() {
-                    match serde_json::to_value(ArkoseToken) {
-                        Ok(x) => {
-                            let _ = body.insert("arkose_token".to_owned(), x);
-                        }
-                        Err(err) => {
-                            return HttpResponse::InternalServerError().json(err.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let resp = client()
-        .post(format!("{URL_CHATGPT_BACKEND}/conversation"))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[patch("/conversation/{conversation_id}")]
-async fn patch_conversation(
-    req: HttpRequest,
-    conversation_id: web::Path<String>,
-    body: Json<Value>,
-) -> impl Responder {
-    let resp = client()
-        .patch(format!(
-            "{URL_CHATGPT_BACKEND}/conversation/{conversation_id}"
-        ))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[patch("/conversations")]
-async fn patch_conversations(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    let resp = client()
-        .patch(format!("{URL_CHATGPT_BACKEND}/conversations"))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[post("/conversation/gen_title/{conversation_id}")]
-async fn post_conversation_gen_title(
-    req: HttpRequest,
-    conversation_id: web::Path<String>,
-    body: Json<Value>,
-) -> impl Responder {
-    let resp = client()
-        .post(format!(
-            "{URL_CHATGPT_BACKEND}/conversation/gen_title/{conversation_id}"
-        ))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[post("/conversation/message_feedbak")]
-async fn post_conversation_message_feedback(req: HttpRequest, body: Json<Value>) -> impl Responder {
-    let resp = client()
-        .post(format!(
-            "{URL_CHATGPT_BACKEND}/conversation/message_feedbak"
-        ))
-        .headers(header_convert(req.headers()))
-        .json(&body.0)
-        .send()
-        .await;
-    response_handle(resp)
-}
-
-#[get("/conversation_limit")]
-async fn get_conversation_limit(req: HttpRequest) -> impl Responder {
-    let resp = client()
-        .get(format!("{URL_CHATGPT_PUBLIC}/conversation_limit"))
-        .headers(header_convert(req.headers()))
-        .send()
-        .await;
+async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> impl Responder {
+    gpt4_body_handle(&req, &mut body);
+    let builder = client()
+        .request(
+            req.method().clone(),
+            format!("{URL_CHATGPT_API}{}", req.uri()),
+        )
+        .headers(header_convert(req.headers()));
+    let resp = match body {
+        Some(body) => builder.json(&body).send().await,
+        None => builder.send().await,
+    };
     response_handle(resp)
 }
 
 fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::header::HeaderMap {
     headers
         .iter()
-        .filter(|v| {
-            let h = v.0;
-            h.ne(&header::CONNECTION) && h.ne(&header::USER_AGENT)
-        })
+        .filter(|v| v.0.eq(&header::AUTHORIZATION))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
+}
+
+fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
+    if req.uri().path().contains("/backend-api/conversation") && req.method().as_str() == "POST" {
+        if let Some(body) = body.as_mut().and_then(|b| b.as_object_mut()) {
+            use crate::api::models::{ArkoseToken, GPT4Model};
+            if let Some(v) = body.get("model").and_then(|m| m.as_str()) {
+                if GPT4Model::try_from(v).is_ok() {
+                    if let Ok(x) = serde_json::to_value(ArkoseToken) {
+                        let _ = body.insert("arkose_token".to_owned(), x);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn response_oauth_bad_handle(msg: &str) -> HttpResponse {
