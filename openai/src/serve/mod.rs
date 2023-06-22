@@ -23,7 +23,7 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::oauth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucket;
-use crate::{error, info, oauth};
+use crate::{info, oauth};
 
 use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
 
@@ -311,6 +311,20 @@ async fn official_proxy(req: HttpRequest, body: Option<Json<Value>>) -> impl Res
     response_handle(resp)
 }
 
+/// reference: doc/http.rest
+/// GET http://{{host}}/backend-api/models?history_and_training_disabled=false
+/// GET http://{{host}}/backend-api/accounts/check
+/// GET http://{{host}}/backend-api/accounts/check/v4-2023-04-27
+/// GET http://{{host}}/backend-api/settings/beta_features
+/// GET http://{{host}}/backend-api/conversation/{conversation_id}
+/// GET http://{{host}}/backend-api/conversations?offset=0&limit=3&order=updated
+/// GET http://{{host}}/public-api/conversation_limit
+/// POST http://{{host}}/backend-api/conversation
+/// PATCH http://{{host}}/backend-api/conversation/{conversation_id}
+/// POST http://{{host}}/backend-api/conversation/gen_title/{conversation_id}
+/// PATCH http://{{host}}/backend-api/conversation/{conversation_id}
+/// PATCH http://{{host}}/backend-api/conversations
+/// POST http://{{host}}/backend-api/conversation/message_feedback
 async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> impl Responder {
     gpt4_body_handle(&req, &mut body);
     let builder = client()
