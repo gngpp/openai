@@ -331,8 +331,9 @@ impl OAuthClient {
             .send()
             .await?;
 
-        let refresh_token = self.response_handle::<RefreshToken>(resp).await?;
-        Ok(AuthenticateToken::try_from(refresh_token)?)
+        let mut token = self.response_handle::<RefreshToken>(resp).await?;
+        token.refresh_token = refresh_token.to_owned();
+        Ok(AuthenticateToken::try_from(token)?)
     }
 
     pub async fn do_revoke_token(&mut self, refresh_token: &str) -> OAuthResult<()> {
@@ -498,12 +499,22 @@ struct IdentifierData<'a> {
     action: &'a str,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Clone)]
 enum GrantType {
-    #[serde(rename = "authorization_code")]
     AuthorizationCode,
-    #[serde(rename = "refresh_token")]
     RefreshToken,
+}
+
+impl Serialize for GrantType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            GrantType::AuthorizationCode => serializer.serialize_str("authorization_code"),
+            GrantType::RefreshToken => serializer.serialize_str("refresh_token"),
+        }
+    }
 }
 
 #[derive(Serialize, Builder)]
