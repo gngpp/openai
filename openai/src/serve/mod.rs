@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::oauth::OAuthClient;
-use crate::serve::tokenbucket::TokenBucket;
+use crate::serve::tokenbucket::TokenBucketContext;
 use crate::{info, oauth};
 
 use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
@@ -63,6 +63,8 @@ pub struct Launcher {
     sign_secret_key: Option<String>,
     /// Enable Tokenbucket
     tb_enable: bool,
+    /// Tokenbucket store strategy
+    tb_store_strategy: tokenbucket::Strategy,
     /// Tokenbucket capacity
     #[cfg(feature = "limit")]
     tb_capacity: u32,
@@ -128,29 +130,35 @@ impl Launcher {
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
             {
-                return app.wrap(middleware::TokenBucketRateLimiter::new(TokenBucket::new(
-                    self.tb_enable,
-                    self.tb_capacity,
-                    self.tb_fill_rate,
-                    self.tb_expired,
-                )));
-            }
-
-            #[cfg(all(not(feature = "limit"), feature = "sign"))]
-            {
-                return app.wrap(middleware::ApiSign::new(self.sign_secret_key.clone()));
+                return app.wrap(middleware::TokenBucketRateLimiter::new(
+                    TokenBucketContext::from((
+                        self.tb_store_strategy.clone(),
+                        self.tb_enable,
+                        self.tb_capacity,
+                        self.tb_fill_rate,
+                        self.tb_expired,
+                    )),
+                ));
             }
 
             #[cfg(all(feature = "sign", feature = "limit"))]
             {
                 return app
                     .wrap(middleware::ApiSign::new(self.sign_secret_key.clone()))
-                    .wrap(middleware::TokenBucketRateLimiter::new(TokenBucket::new(
-                        self.tb_enable,
-                        self.tb_capacity,
-                        self.tb_fill_rate,
-                        self.tb_expired,
-                    )));
+                    .wrap(middleware::TokenBucketRateLimiter::new(
+                        TokenBucketContext::from((
+                            self.tb_store_strategy.clone(),
+                            self.tb_enable,
+                            self.tb_capacity,
+                            self.tb_fill_rate,
+                            self.tb_expired,
+                        )),
+                    ));
+            }
+
+            #[cfg(all(not(feature = "limit"), feature = "sign"))]
+            {
+                return app.wrap(middleware::ApiSign::new(self.sign_secret_key.clone()));
             }
 
             #[cfg(not(any(feature = "sign", feature = "limit")))]

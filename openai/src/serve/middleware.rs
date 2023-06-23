@@ -91,14 +91,14 @@ use crate::token;
 #[cfg(feature = "sign")]
 use super::sign::Sign;
 #[cfg(feature = "limit")]
-use super::tokenbucket::TokenBucket;
+use super::tokenbucket::{TokenBucket, TokenBucketContext};
 
 #[cfg(feature = "limit")]
-pub struct TokenBucketRateLimiter(Rc<TokenBucket>);
+pub struct TokenBucketRateLimiter(Rc<TokenBucketContext>);
 
 #[cfg(feature = "limit")]
 impl TokenBucketRateLimiter {
-    pub fn new(tb: TokenBucket) -> Self {
+    pub fn new(tb: TokenBucketContext) -> Self {
         Self(Rc::new(tb))
     }
 }
@@ -127,7 +127,7 @@ where
 #[cfg(feature = "limit")]
 pub struct TokenBacketMiddleware<S> {
     service: Rc<S>,
-    tb: Rc<TokenBucket>,
+    tb: Rc<TokenBucketContext>,
 }
 
 impl<S, B> Service<ServiceRequest> for TokenBacketMiddleware<S>
@@ -165,13 +165,18 @@ where
                 let tb = self.tb.clone();
                 Box::pin(async move {
                     match tb.acquire(addr).await {
-                        true => {
-                            // forwarded responses map to "left" body
-                            svc.call(request)
-                                .await
-                                .map(ServiceResponse::map_into_left_body)
+                        Ok(condition) => {
+                            match condition {
+                                true => {
+                                    // forwarded responses map to "left" body
+                                    svc.call(request)
+                                        .await
+                                        .map(ServiceResponse::map_into_left_body)
+                                }
+                                false => bad_response("Too Many Requests", request).await,
+                            }
                         }
-                        false => bad_response("Too Many Requests", request).await,
+                        Err(err) => bad_response(&err.to_string(), request).await,
                     }
                 })
             }

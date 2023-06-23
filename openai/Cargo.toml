@@ -23,7 +23,6 @@ base64 = "0.21.2"
 rand = "0.8.5"
 async-trait = "0.1.68"
 derive_builder = "0.12.0"
-bytes = { version = "1.4.0", default-features = false }
 jsonwebtokens = "1"
 sha2 = "0.10.6"
 hmac = { version = "0.12.1", optional = true }
@@ -31,6 +30,10 @@ actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
 rustls-pemfile = { version = "1.0.2", optional = true }
 tokio-rustls = { version = "0.23.4", optional = true }
 futures-core = { version = "0.3.5", optional = true}
+
+# redis limit
+redis = { version = "0.23.0", features = ["tokio-comp"], optional = true }
+redis-macros = { version = "0.1.0", optional = true}
 
 # stream
 tokio-util = { version = "0.7", features = ["codec"], optional = true }
@@ -48,7 +51,7 @@ h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
 [features]
 default = ["serve", "limit", "sign", "opengpt", "platform", "stream"]
-serve = ["actix-web", "rustls-pemfile", "tokio-rustls", "dep:futures-core"]
+serve = ["dep:actix-web", "dep:rustls-pemfile", "dep:tokio-rustls", "dep:futures-core"]
 opengpt = []
 platform = ["dep:tokio-util"]
 stream = [
@@ -62,7 +65,7 @@ stream = [
     "dep:futures-timer"
     ]
 remote-token = []
-limit = []
+limit = ["dep:redis", "dep:redis-macros"]
 sign = ["hmac"]
 
 [lib]

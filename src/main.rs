@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use openai::serve::LauncherBuilder;
+use openai::serve::{tokenbucket, LauncherBuilder};
 use std::{io::Write, path::PathBuf, sync::Once, time::Duration};
 
 pub mod account;
@@ -49,6 +49,15 @@ enum SubCommands {
         #[clap(short = 'T', long, env = "OPENGPT_TB_ENABLE")]
         #[cfg(feature = "limit")]
         tb_enable: bool,
+        /// Token bucket store strategy (mem/redis)
+        #[clap(
+            long,
+            env = "OPENGPT_TB_STORE_STRATEGY",
+            default_value = "mem",
+            requires = "tb_enable"
+        )]
+        #[cfg(feature = "limit")]
+        tb_store_strategy: tokenbucket::Strategy,
         /// Token bucket capacity
         #[clap(
             long,
@@ -120,6 +129,8 @@ async fn main() -> anyhow::Result<()> {
                 #[cfg(feature = "limit")]
                 tb_enable,
                 #[cfg(feature = "limit")]
+                tb_store_strategy,
+                #[cfg(feature = "limit")]
                 tb_capacity,
                 #[cfg(feature = "limit")]
                 tb_fill_rate,
@@ -137,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
                 #[cfg(feature = "limit")]
                 let builder = builder
                     .tb_enable(tb_enable)
+                    .tb_store_strategy(tb_store_strategy)
                     .tb_capacity(tb_capacity)
                     .tb_fill_rate(tb_fill_rate)
                     .tb_expired(tb_expired);
