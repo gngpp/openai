@@ -115,6 +115,7 @@ impl Launcher {
                         .service(post_refresh_token)
                         .service(post_revoke_token),
                 )
+                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 .service(
                     web::scope(EMPTY)
                         .wrap(middleware::TokenAuthorization)
@@ -126,8 +127,7 @@ impl Launcher {
                                 .route(web::to(unofficial_proxy)),
                         )
                         .service(web::resource("/v1/{tail:.*}").route(web::to(official_proxy))),
-                )
-                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)));
+                );
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
             {
@@ -213,7 +213,7 @@ impl Launcher {
                     .collect::<Vec<PrivateKey>>()
                     .remove(0),
             )?),
-            None => anyhow::bail!("Could not locate PKCS 8 private keys."),
+            None => anyhow::bail!("Could not locate EC/PKCS8/RSA private keys."),
         }
     }
 }
@@ -222,7 +222,7 @@ impl Launcher {
 async fn post_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
     match oauth_client().do_access_token(account.into_inner()).await {
         Ok(token) => HttpResponse::Ok().json(token),
-        Err(err) => response_oauth_bad_handle(&err.to_string()),
+        Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
 }
 
@@ -234,7 +234,7 @@ async fn post_refresh_token(req: HttpRequest) -> impl Responder {
         .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
     match oauth_client().do_refresh_token(refresh_token).await {
         Ok(token) => HttpResponse::Ok().json(token),
-        Err(err) => response_oauth_bad_handle(&err.to_string()),
+        Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
 }
 
@@ -246,7 +246,7 @@ async fn post_revoke_token(req: HttpRequest) -> impl Responder {
         .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
     match oauth_client().do_revoke_token(refresh_token).await {
         Ok(token) => HttpResponse::Ok().json(token),
-        Err(err) => response_oauth_bad_handle(&err.to_string()),
+        Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
 }
 
@@ -348,10 +348,6 @@ fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
             }
         }
     }
-}
-
-fn response_oauth_bad_handle(msg: &str) -> HttpResponse {
-    HttpResponse::BadRequest().json(msg)
 }
 
 fn response_handle(resp: Result<reqwest::Response, reqwest::Error>) -> HttpResponse {
