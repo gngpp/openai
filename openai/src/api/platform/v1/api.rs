@@ -5,9 +5,9 @@ use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[cfg(feature = "stream")]
-use futures::{stream::StreamExt, Stream};
+use crate::eventsource::{Event, EventSource, RequestBuilderExt};
 #[cfg(feature = "stream")]
-use reqwest_eventsource::{Event, EventSource, RequestBuilderExt};
+use futures::{stream::StreamExt, Stream};
 #[cfg(feature = "stream")]
 use serde::de::DeserializeOwned;
 #[cfg(feature = "stream")]

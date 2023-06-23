@@ -41,12 +41,12 @@ async fn main() -> anyhow::Result<()> {
         .model(model[0])
         .message_id(&message_id)
         .parent_message_id(&parent_message_id)
-        .prompt("Zig Example")
+        .prompt("Rust Example")
         .build()?;
 
-    let mut resp: openai::api::opengpt::PostConvoStreamResponse = api
+    let mut resp = api
         .post_conversation(PostConvoRequest::try_from(req)?)
-        .await?;
+        .await;
 
     let mut previous_message = String::new();
     let mut out: tokio::io::Stdout = tokio::io::stdout();
@@ -54,27 +54,29 @@ async fn main() -> anyhow::Result<()> {
     let mut end_message_id: Option<String> = None;
     let mut end_turn: Option<bool> = None;
     while let Some(body) = resp.next().await {
-        if conversation_id.is_none() {
-            conversation_id = Some(body.conversation_id.to_string())
-        }
+        if let Ok(body) = body {
+            if conversation_id.is_none() {
+                conversation_id = Some(body.conversation_id.to_string())
+            }
 
-        if end_message_id.is_none() {
-            end_message_id = Some(body.message_id().to_string())
-        }
+            if end_message_id.is_none() {
+                end_message_id = Some(body.message_id().to_string())
+            }
 
-        if let Some(end) = body.end_turn() {
-            end_turn = Some(end)
-        }
+            if let Some(end) = body.end_turn() {
+                end_turn = Some(end)
+            }
 
-        let message = &body.message()[0];
-        if message.starts_with(&previous_message) {
-            let new_chars = message.trim_start_matches(&previous_message);
-            out.write_all(new_chars.as_bytes()).await?;
-        } else {
-            out.write_all(message.as_bytes()).await?;
+            let message = &body.message()[0];
+            if message.starts_with(&previous_message) {
+                let new_chars = message.trim_start_matches(&previous_message);
+                out.write_all(new_chars.as_bytes()).await?;
+            } else {
+                out.write_all(message.as_bytes()).await?;
+            }
+            out.flush().await?;
+            previous_message = message.to_string();
         }
-        out.flush().await?;
-        previous_message = message.to_string();
     }
 
     let conversation_id = conversation_id.unwrap_or_default();
@@ -115,17 +117,19 @@ async fn main() -> anyhow::Result<()> {
 
         let mut resp = api
             .post_conversation(PostConvoRequest::try_from(req)?)
-            .await?;
+            .await;
         while let Some(body) = resp.next().await {
-            let message = &body.message()[0];
-            if message.starts_with(&previous_message) {
-                let new_chars = message.trim_start_matches(&previous_message);
-                out.write_all(new_chars.as_bytes()).await?;
-            } else {
-                out.write_all(message.as_bytes()).await?;
+            if let Ok(body) = body {
+                let message = &body.message()[0];
+                if message.starts_with(&previous_message) {
+                    let new_chars = message.trim_start_matches(&previous_message);
+                    out.write_all(new_chars.as_bytes()).await?;
+                } else {
+                    out.write_all(message.as_bytes()).await?;
+                }
+                out.flush().await?;
+                previous_message = message.to_string();
             }
-            out.flush().await?;
-            previous_message = message.to_string();
         }
     }
 

@@ -1,15 +1,11 @@
 pub mod models;
 
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::pin::Pin;
 
-use futures_util::Stream;
-
-use crate::{debug, warn};
-
-use models::resp::PostConvoResponse;
+#[cfg(feature = "stream")]
+use crate::eventsource::{Event, EventSource, RequestBuilderExt};
+#[cfg(feature = "stream")]
+use futures::{stream::StreamExt, Stream};
 
 pub type ApiResult<T, E = ApiError> = anyhow::Result<T, E>;
 
@@ -35,6 +31,8 @@ pub enum ApiError {
     JsonAnyhowDeserializeError(#[from] anyhow::Error),
     #[error("failed serialize `{0}`")]
     SerializeError(String),
+    #[error("stream error `{0}`")]
+    StreamError(String),
     #[error("system time exception")]
     SystemTimeExceptionError,
     #[error("too many requests `{0}`")]
@@ -61,76 +59,8 @@ pub trait Success {
     fn ok(&self) -> bool;
 }
 
-pub struct PostConvoStreamResponse {
-    response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
-    first_chunk: bool,
-}
-
-impl PostConvoStreamResponse {
-    pub fn new(
-        response: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
-    ) -> Self {
-        Self {
-            response,
-            first_chunk: true,
-        }
-    }
-}
-
-impl Stream for PostConvoStreamResponse {
-    type Item = PostConvoResponse;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        loop {
-            match self.response.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(chunk))) => {
-                    let mut utf8_str = String::from_utf8_lossy(&chunk).to_string();
-
-                    if self.first_chunk {
-                        let lines: Vec<&str> = utf8_str.lines().collect();
-                        utf8_str = if lines.len() >= 2 {
-                            lines[lines.len() - 2].to_string()
-                        } else {
-                            utf8_str.clone()
-                        };
-                        self.first_chunk = false;
-                    }
-
-                    let trimmed_str = utf8_str.trim_start_matches("data: ");
-
-                    let json_result = serde_json::from_str::<Self::Item>(trimmed_str);
-
-                    match json_result {
-                        Ok(json) => {
-                            return Poll::Ready(Some(json));
-                        }
-                        Err(e) => {
-                            debug!("Error in stream: {:?}", e);
-                        }
-                    }
-                }
-                Poll::Ready(Some(Err(e))) => {
-                    warn!("Error in stream: {:?}", e);
-                    return Poll::Ready(None);
-                }
-                Poll::Ready(None) => {
-                    return Poll::Ready(None);
-                }
-                Poll::Pending => {
-                    return Poll::Pending;
-                }
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, None)
-    }
-}
-
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use reqwest::{
     browser::{self, ChromeVersion},
     Proxy, StatusCode,
@@ -244,6 +174,50 @@ impl OpenGPT {
                 _ => Ok(ApiError::FailedRequestError(err_msg)),
             }
     }
+
+    #[cfg(feature = "stream")]
+    pub async fn process_stream<O>(
+        mut event_soure: EventSource,
+    ) -> Pin<Box<dyn Stream<Item = Result<O, ApiError>> + Send>>
+    where
+        O: DeserializeOwned + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+        tokio::spawn(async move {
+            while let Some(event_result) = event_soure.next().await {
+                match event_result {
+                    Ok(event) => match event {
+                        Event::Open => continue,
+                        Event::Message(message) => {
+                            if message.data == "[DONE]" {
+                                break;
+                            }
+
+                            let response = match serde_json::from_str::<O>(&message.data) {
+                                Ok(result) => Ok(result),
+                                Err(error) => Err(ApiError::SerdeDeserializeError(error)),
+                            };
+
+                            if let Err(_error) = tx.send(response) {
+                                break;
+                            }
+                        }
+                    },
+                    Err(error) => {
+                        if let Err(_error) = tx.send(Err(ApiError::StreamError(error.to_string())))
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            event_soure.close();
+        });
+
+        Box::pin(tokio_stream::wrappers::UnboundedReceiverStream::new(rx))
+    }
 }
 
 impl OpenGPT {
@@ -298,22 +272,20 @@ impl OpenGPT {
         .await
     }
 
+    #[cfg(feature = "stream")]
     pub async fn post_conversation<'a>(
         &self,
         req: req::PostConvoRequest<'a>,
-    ) -> ApiResult<PostConvoStreamResponse> {
+    ) -> Pin<Box<dyn Stream<Item = ApiResult<resp::PostConvoResponse>> + Send>> {
         let url = format!("{}/conversation", self.api_prefix);
         let resp = self
             .client
             .post(url)
             .bearer_auth(&self.access_token.read().await)
             .json(&req)
-            .send()
-            .await?;
-        match resp.error_for_status_ref() {
-            Ok(_) => Ok(PostConvoStreamResponse::new(Box::pin(resp.bytes_stream()))),
-            Err(err) => Err(self.err_handle(err, resp).await?),
-        }
+            .eventsource()
+            .unwrap();
+        Self::process_stream::<resp::PostConvoResponse>(resp).await
     }
 
     pub async fn post_conversation_completions<'a>(
@@ -334,7 +306,7 @@ impl OpenGPT {
                 let mut v = Vec::new();
                 let mut stream = resp.bytes_stream();
 
-                while let Some(item) = stream.next().await {
+                while let Some(item) = StreamExt::next(&mut stream).await {
                     let body =
                         String::from_utf8(item?.to_vec()).map_err(ApiError::FromUtf8Error)?;
 

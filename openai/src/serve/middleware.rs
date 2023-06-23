@@ -10,7 +10,7 @@ use actix_web::{
     http::header,
     Error, HttpResponse,
 };
-use futures_util::future::LocalBoxFuture;
+use futures_core::future::LocalBoxFuture;
 
 #[derive(serde::Serialize)]
 struct MiddlewareMessage<'a> {
