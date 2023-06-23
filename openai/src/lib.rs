@@ -1,4 +1,6 @@
 pub mod api;
+#[cfg(feature = "stream")]
+pub mod eventsource;
 pub mod log;
 pub mod model;
 pub mod oauth;

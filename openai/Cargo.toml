@@ -23,7 +23,6 @@ base64 = "0.21.2"
 rand = "0.8.5"
 async-trait = "0.1.68"
 derive_builder = "0.12.0"
-futures-util = "0.3.28"
 bytes = { version = "1.4.0", default-features = false }
 jsonwebtokens = "1"
 sha2 = "0.10.6"
@@ -31,21 +30,40 @@ hmac = { version = "0.12.1", optional = true }
 actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
 rustls-pemfile = { version = "1.0.2", optional = true }
 tokio-rustls = { version = "0.23.4", optional = true }
-reqwest-eventsource = { version = "0.4.0", optional = true }
+futures-core = { version = "0.3.5", optional = true}
+
+# stream
 tokio-util = { version = "0.7", features = ["codec"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
+eventsource-stream = { version = "0.2.3", optional = true}
+pin-project-lite = { version = "0.2.8", optional = true}
+nom = { version = "7.1.0", optional = true}
+mime = { version = "0.3.16", optional = true}
+futures-timer = { version = "3.0.2", optional = true}
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched"}
 h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
 [features]
-default = ["serve", "limit", "sign", "opengpt", "platform"]
-serve = ["actix-web", "rustls-pemfile", "tokio-rustls"]
+default = ["serve", "limit", "sign", "opengpt", "platform", "stream"]
+serve = ["actix-web", "rustls-pemfile", "tokio-rustls", "dep:futures-core"]
 opengpt = []
-platform = ["tokio-util", "reqwest-eventsource"]
+platform = ["dep:tokio-util"]
+stream = [
+    "dep:futures",
+    "dep:tokio-stream", 
+    "dep:eventsource-stream", 
+    "dep:futures-core", 
+    "dep:pin-project-lite", 
+    "dep:nom",
+    "dep:mime",
+    "dep:futures-timer"
+    ]
+remote-token = []
 limit = []
 sign = ["hmac"]
-remote-token = []
 
 [lib]
 name = "openai"
