@@ -59,3 +59,4 @@ Options:
 
 ### Reference
 - https://github.com/tjardoo/openai-client
+- https://github.com/jpopesculian/reqwest-eventsource
