@@ -47,8 +47,10 @@ pub enum OAuthError {
     InvalidEmail,
     #[error("invalid Location")]
     InvalidLocation,
-    #[error("invalid token")]
+    #[error("invalid access-token")]
     InvalidAccessToken,
+    #[error("invalid refresh-token")]
+    InvalidRefreshToken,
     #[error("token expired")]
     TokenExpired,
     #[error("MFA failed")]

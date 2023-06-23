@@ -317,6 +317,7 @@ impl OAuthClient {
         &mut self,
         refresh_token: &str,
     ) -> OAuthResult<AuthenticateToken> {
+        let refresh_token = Self::verify_refresh_token(refresh_token)?;
         let data = RefreshTokenDataBuilder::default()
             .redirect_uri(OPENAI_OAUTH_CALLBACK_URL)
             .grant_type(GrantType::RefreshToken)
@@ -337,6 +338,7 @@ impl OAuthClient {
     }
 
     pub async fn do_revoke_token(&mut self, refresh_token: &str) -> OAuthResult<()> {
+        let refresh_token = Self::verify_refresh_token(refresh_token)?;
         let data = RevokeTokenDataBuilder::default()
             .client_id(CLIENT_ID)
             .token(refresh_token)
@@ -470,6 +472,14 @@ impl OAuthClient {
             .get("Location")
             .ok_or(OAuthError::InvalidLocation)?
             .to_str()?)
+    }
+
+    fn verify_refresh_token(t: &str) -> OAuthResult<&str> {
+        let refresh_token = t.trim_start_matches("Bearer ");
+        if refresh_token.is_empty() {
+            bail!(OAuthError::InvalidRefreshToken)
+        }
+        Ok(refresh_token)
     }
 }
 

@@ -26,7 +26,7 @@ use crate::serve::tokenbucket::TokenBucket;
 use crate::{info, oauth};
 
 use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
-
+const EMPTY: &str = "";
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;
 static mut OAUTH_CLIENT: Option<OAuthClient> = None;
@@ -116,19 +116,16 @@ impl Launcher {
                         .service(post_revoke_token),
                 )
                 .service(
-                    web::resource("/dashboard/{tail:.*}")
+                    web::scope(EMPTY)
                         .wrap(middleware::TokenAuthorization)
-                        .route(web::to(official_proxy)),
-                )
-                .service(
-                    web::resource("/v1/{tail:.*}")
-                        .wrap(middleware::TokenAuthorization)
-                        .route(web::to(official_proxy)),
-                )
-                .service(
-                    web::resource("/backend-api/{tail:.*}")
-                        .wrap(middleware::TokenAuthorization)
-                        .route(web::to(unofficial_proxy)),
+                        .service(
+                            web::resource("/dashboard/{tail:.*}").route(web::to(official_proxy)),
+                        )
+                        .service(
+                            web::resource("/backend-api/{tail:.*}")
+                                .route(web::to(unofficial_proxy)),
+                        )
+                        .service(web::resource("/v1/{tail:.*}").route(web::to(official_proxy))),
                 )
                 .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)));
 
@@ -231,35 +228,25 @@ async fn post_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder
 
 #[post("/refresh_token")]
 async fn post_refresh_token(req: HttpRequest) -> impl Responder {
-    match req.headers().get(header::AUTHORIZATION) {
-        Some(token) => match token.to_str() {
-            Ok(token_val) => {
-                let refresh_token = token_val.trim_start_matches("Bearer ");
-                match oauth_client().do_refresh_token(refresh_token).await {
-                    Ok(token) => HttpResponse::Ok().json(token),
-                    Err(err) => response_oauth_bad_handle(&err.to_string()),
-                }
-            }
-            Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
-        },
-        None => HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#),
+    let refresh_token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
+    match oauth_client().do_refresh_token(refresh_token).await {
+        Ok(token) => HttpResponse::Ok().json(token),
+        Err(err) => response_oauth_bad_handle(&err.to_string()),
     }
 }
 
 #[post("/revoke_token")]
 async fn post_revoke_token(req: HttpRequest) -> impl Responder {
-    match req.headers().get(header::AUTHORIZATION) {
-        Some(token) => match token.to_str() {
-            Ok(token_val) => {
-                let refresh_token = token_val.trim_start_matches("Bearer ");
-                match oauth_client().do_revoke_token(refresh_token).await {
-                    Ok(_) => HttpResponse::Ok().finish(),
-                    Err(err) => response_oauth_bad_handle(&err.to_string()),
-                }
-            }
-            Err(err) => HttpResponse::InternalServerError().json(err.to_string()),
-        },
-        None => HttpResponse::Unauthorized().body(r#"{ "message": "refresh_token is required! "}"#),
+    let refresh_token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
+    match oauth_client().do_revoke_token(refresh_token).await {
+        Ok(token) => HttpResponse::Ok().json(token),
+        Err(err) => response_oauth_bad_handle(&err.to_string()),
     }
 }
 
