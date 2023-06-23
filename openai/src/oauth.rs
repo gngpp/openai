@@ -8,6 +8,7 @@ use anyhow::bail;
 use async_recursion::async_recursion;
 use derive_builder::Builder;
 use regex::Regex;
+use reqwest::browser::ChromeVersion;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
@@ -23,7 +24,6 @@ use crate::model::{
 };
 use crate::{debug, OAuthError, OAuthResult};
 
-const HEADER_UA: &str = "ChatGPT/1.2023.21 (iOS 16.2; iPad11,1; build 623)";
 const CLIENT_ID: &str = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh";
 const OPENAI_OAUTH_URL: &str = "https://auth0.openai.com";
 const OPENAI_OAUTH_TOKEN_URL: &str = "https://auth0.openai.com/oauth/token";
@@ -679,27 +679,36 @@ impl OAuthClientBuilder {
         self
     }
 
+    /// Sets the necessary values to mimic the specified Chrome version.
+    pub fn chrome_builder(mut self, ver: ChromeVersion) -> Self {
+        self.builder = self.builder.chrome_builder(ver);
+        self
+    }
+
+    /// Sets the `User-Agent` header to be used by this client.
+    pub fn user_agent(mut self, value: &str) -> Self {
+        self.builder = self.builder.user_agent(value);
+        self
+    }
+
     pub fn build(mut self) -> OAuthClient {
         self.oauth.client = self.builder.build().expect("ClientBuilder::build()");
         self.oauth
     }
 
     pub fn builder() -> OAuthClientBuilder {
-        let client_builder = Client::builder()
-            .chrome_builder(reqwest::browser::ChromeVersion::V108)
-            .user_agent(HEADER_UA)
-            .redirect(Policy::custom(|attempt| {
-                if attempt
-                    .url()
-                    .to_string()
-                    .contains("https://auth0.openai.com/u/login/identifier")
-                {
-                    // redirects to 'https://auth0.openai.com/u/login/identifier'
-                    attempt.follow()
-                } else {
-                    attempt.stop()
-                }
-            }));
+        let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
+            if attempt
+                .url()
+                .to_string()
+                .contains("https://auth0.openai.com/u/login/identifier")
+            {
+                // redirects to 'https://auth0.openai.com/u/login/identifier'
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }));
 
         OAuthClientBuilder {
             builder: client_builder,

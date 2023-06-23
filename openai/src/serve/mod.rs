@@ -10,6 +10,7 @@ use actix_web::web::Json;
 use actix_web::{post, App, HttpResponse, HttpServer, Responder};
 use actix_web::{web, HttpRequest};
 use derive_builder::Builder;
+use reqwest::browser::ChromeVersion;
 use reqwest::Client;
 use serde_json::Value;
 use std::fs::File;
@@ -75,21 +76,17 @@ pub struct Launcher {
 
 impl Launcher {
     pub async fn run(self) -> anyhow::Result<()> {
-        use reqwest::header;
-        let mut headers = header::HeaderMap::new();
-        headers.insert(
-            header::USER_AGENT,
-            header::HeaderValue::from_static(HEADER_UA),
-        );
         let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .chrome_builder(reqwest::browser::ChromeVersion::V105)
+            .user_agent(HEADER_UA)
+            .chrome_builder(ChromeVersion::V108)
             .tcp_keepalive(Some(self.tcp_keepalive))
             .pool_max_idle_per_host(self.workers)
             .cookie_store(false)
             .build()?;
 
         let oauth_client = oauth::OAuthClientBuilder::builder()
+            .user_agent(HEADER_UA)
+            .chrome_builder(ChromeVersion::V108)
             .cookie_store(true)
             .pool_max_idle_per_host(self.workers)
             .build();

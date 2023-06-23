@@ -12,6 +12,8 @@ async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
     let mut auth = openai::oauth::OAuthClientBuilder::builder()
+        .user_agent(openai::api::HEADER_UA)
+        .chrome_builder(reqwest::browser::ChromeVersion::V108)
         .cookie_store(true)
         .client_timeout(std::time::Duration::from_secs(20))
         .build();

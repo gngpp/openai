@@ -25,6 +25,7 @@ openai = { path = "openai" }
 futures-util = "0.3.27"
 inquire = "0.6.2"
 async-trait = "0.1.68"
+reqwest = { path = "reqwest", default-features = false, features = [ "chrome" ] }
 
 [dependencies.uuid]
 version = "1.3.3"

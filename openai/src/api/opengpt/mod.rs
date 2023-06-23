@@ -132,8 +132,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest::{
-    browser,
-    header::{HeaderMap, HeaderValue},
+    browser::{self, ChromeVersion},
     Proxy, StatusCode,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -249,16 +248,13 @@ impl OpenGPT {
 
 impl OpenGPT {
     pub async fn get_models(&self) -> ApiResult<resp::GetModelsResponse> {
-        self.request(
-            format!("{URL_CHATGPT_API}/backend-api/models"),
-            RequestMethod::GET,
-        )
-        .await
+        self.request(format!("{}/models", self.api_prefix), RequestMethod::GET)
+            .await
     }
 
     pub async fn get_account_check(&self) -> ApiResult<resp::GetAccountsCheckResponse> {
         self.request(
-            format!("{URL_CHATGPT_API}/backend-api/accounts/check"),
+            format!("{}/accounts/check", self.api_prefix),
             RequestMethod::GET,
         )
         .await
@@ -266,7 +262,7 @@ impl OpenGPT {
 
     pub async fn get_account_check_4(&self) -> ApiResult<resp::GetAccountsCheckV4Response> {
         self.request(
-            format!("{URL_CHATGPT_API}/backend-api/accounts/check/v4-2023-04-27"),
+            format!("{}/accounts/check/v4-2023-04-27", self.api_prefix),
             RequestMethod::GET,
         )
         .await
@@ -279,7 +275,7 @@ impl OpenGPT {
         match req.conversation_id {
             Some(conversation_id) => {
                 self.request::<resp::GetConvoResonse>(
-                    format!("{URL_CHATGPT_API}/backend-api/conversation/{conversation_id}"),
+                    format!("{}/conversation/{conversation_id}", self.api_prefix),
                     RequestMethod::GET,
                 )
                 .await
@@ -294,8 +290,8 @@ impl OpenGPT {
     ) -> ApiResult<resp::GetConvosResponse> {
         self.request::<resp::GetConvosResponse>(
             format!(
-                "{URL_CHATGPT_API}/backend-api/conversations?offset={}&limit={}&order=updated",
-                req.offset, req.limit
+                "{}/conversations?offset={}&limit={}&order=updated",
+                self.api_prefix, req.offset, req.limit
             ),
             RequestMethod::GET,
         )
@@ -306,7 +302,7 @@ impl OpenGPT {
         &self,
         req: req::PostConvoRequest<'a>,
     ) -> ApiResult<PostConvoStreamResponse> {
-        let url = format!("{URL_CHATGPT_API}/backend-api/conversation");
+        let url = format!("{}/conversation", self.api_prefix);
         let resp = self
             .client
             .post(url)
@@ -324,7 +320,7 @@ impl OpenGPT {
         &self,
         req: req::PostConvoRequest<'a>,
     ) -> ApiResult<Vec<resp::PostConvoResponse>> {
-        let url = format!("{URL_CHATGPT_API}/backend-api/conversation");
+        let url = format!("{}/conversation", self.api_prefix);
         let resp = self
             .client
             .post(url)
@@ -368,7 +364,7 @@ impl OpenGPT {
         match &req.conversation_id {
             Some(conversation_id) => {
                 self.request_payload(
-                    format!("{URL_CHATGPT_API}/backend-api/conversation/{conversation_id}"),
+                    format!("{}/conversation/{conversation_id}", self.api_prefix),
                     RequestMethod::PATCH,
                     &req,
                 )
@@ -383,7 +379,7 @@ impl OpenGPT {
         req: req::PatchConvoRequest<'a>,
     ) -> ApiResult<resp::PatchConvoResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_API}/backend-api/conversations"),
+            format!("{}/conversations", self.api_prefix),
             RequestMethod::PATCH,
             &req,
         )
@@ -396,8 +392,8 @@ impl OpenGPT {
     ) -> ApiResult<resp::PostConvoGenTitleResponse> {
         self.request_payload(
             format!(
-                "{URL_CHATGPT_API}/backend-api/conversation/gen_title/{}",
-                req.conversation_id
+                "{}/conversation/gen_title/{}",
+                self.api_prefix, req.conversation_id,
             ),
             RequestMethod::POST,
             &req,
@@ -410,7 +406,7 @@ impl OpenGPT {
         req: req::MessageFeedbackRequest<'a>,
     ) -> ApiResult<resp::MessageFeedbackResponse> {
         self.request_payload(
-            format!("{URL_CHATGPT_API}/backend-api/conversation/message_feedbak"),
+            format!("{}/conversation/message_feedbak", self.api_prefix),
             RequestMethod::POST,
             &req,
         )
@@ -428,12 +424,12 @@ impl OpenGPT {
 
 pub struct OpenGPTBuilder {
     builder: reqwest::ClientBuilder,
-    api: OpenGPT,
+    opengpt: OpenGPT,
 }
 
 impl OpenGPTBuilder {
     pub fn api_prefix(mut self, url: String) -> Self {
-        self.api.api_prefix = url;
+        self.opengpt.api_prefix = url;
         self
     }
 
@@ -463,31 +459,37 @@ impl OpenGPTBuilder {
     }
 
     pub fn access_token(mut self, access_token: String) -> Self {
-        self.api.access_token = tokio::sync::RwLock::new(access_token);
+        self.opengpt.access_token = tokio::sync::RwLock::new(access_token);
+        self
+    }
+
+    /// Sets the necessary values to mimic the specified Chrome version.
+    pub fn chrome_builder(mut self, ver: ChromeVersion) -> Self {
+        self.builder = self.builder.chrome_builder(ver);
+        self
+    }
+
+    /// Sets the `User-Agent` header to be used by this client.
+    pub fn user_agent(mut self, value: &str) -> Self {
+        self.builder = self.builder.user_agent(value);
         self
     }
 
     pub fn build(mut self) -> OpenGPT {
-        self.api.client = self.builder.build().expect("ClientBuilder::build()");
-        self.api
+        self.opengpt.client = self.builder.build().expect("ClientBuilder::build()");
+        self.opengpt
     }
 
     pub fn builder() -> OpenGPTBuilder {
-        let mut req_headers = HeaderMap::new();
-        req_headers.insert(
-            reqwest::header::USER_AGENT,
-            HeaderValue::from_static(HEADER_UA),
-        );
-
         let client = reqwest::ClientBuilder::new()
+            .user_agent(HEADER_UA)
             .chrome_builder(browser::ChromeVersion::V108)
-            .cookie_store(true)
-            .default_headers(req_headers);
+            .cookie_store(true);
 
         OpenGPTBuilder {
             builder: client,
-            api: OpenGPT {
-                api_prefix: String::from(URL_CHATGPT_API),
+            opengpt: OpenGPT {
+                api_prefix: format!("{URL_CHATGPT_API}/backend-api"),
                 client: reqwest::Client::new(),
                 access_token: RwLock::default(),
             },
