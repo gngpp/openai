@@ -3,7 +3,7 @@ use std::time;
 use futures_util::StreamExt;
 use openai::{
     api::opengpt::models::req::{self, PostConvoRequest},
-    oauth::OAuthAccountBuilder,
+    auth::OAuthAccountBuilder,
 };
 use tokio::io::AsyncWriteExt;
 
@@ -11,7 +11,7 @@ use tokio::io::AsyncWriteExt;
 async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
-    let mut auth = openai::oauth::OAuthClientBuilder::builder()
+    let mut auth = openai::auth::OAuthClientBuilder::builder()
         .user_agent(openai::api::HEADER_UA)
         .chrome_builder(reqwest::browser::ChromeVersion::V108)
         .cookie_store(true)

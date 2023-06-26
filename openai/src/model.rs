@@ -33,6 +33,10 @@ impl AuthenticateToken {
         chrono::Utc::now().timestamp() > self.expires
     }
 
+    pub fn expired(&self) -> i64 {
+        self.expires
+    }
+
     pub fn profile(&self) -> &Profile {
         &self.profile
     }
@@ -70,10 +74,10 @@ impl TryFrom<String> for Profile {
     }
 }
 
-impl TryFrom<crate::oauth::AccessToken> for AuthenticateToken {
+impl TryFrom<crate::auth::AccessToken> for AuthenticateToken {
     type Error = anyhow::Error;
 
-    fn try_from(value: crate::oauth::AccessToken) -> Result<Self, Self::Error> {
+    fn try_from(value: crate::auth::AccessToken) -> Result<Self, Self::Error> {
         let profile = Profile::try_from(value.id_token)?;
         let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
             - chrono::Duration::minutes(5))
@@ -87,10 +91,10 @@ impl TryFrom<crate::oauth::AccessToken> for AuthenticateToken {
     }
 }
 
-impl TryFrom<crate::oauth::RefreshToken> for AuthenticateToken {
+impl TryFrom<crate::auth::RefreshToken> for AuthenticateToken {
     type Error = anyhow::Error;
 
-    fn try_from(value: crate::oauth::RefreshToken) -> Result<Self, Self::Error> {
+    fn try_from(value: crate::auth::RefreshToken) -> Result<Self, Self::Error> {
         let profile = Profile::try_from(value.id_token)?;
         let expires = (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)
             - chrono::Duration::minutes(5))

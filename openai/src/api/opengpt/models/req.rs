@@ -1,7 +1,9 @@
 use derive_builder::Builder;
 use serde::Serialize;
 
-use super::{ArkoseToken, Author, GPT4Model, Role};
+use crate::arkose_token::ArkoseToken;
+
+use super::{Author, Role};
 
 #[derive(Serialize, Builder, Clone)]
 pub struct Content<'a> {
@@ -92,17 +94,13 @@ pub struct PostConvoRequest<'a> {
     #[builder(default = "false")]
     history_and_training_disabled: bool,
     #[builder(default)]
-    arkose_token: Option<ArkoseToken>,
+    arkose_token: Option<&'a ArkoseToken>,
 }
 
 impl<'a> TryFrom<PostNextConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostNextConvoRequest<'a>) -> Result<Self, Self::Error> {
-        let ak = match GPT4Model::try_from(value.model) {
-            Ok(_) => Some(ArkoseToken),
-            Err(_) => None,
-        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Next)
             .parent_message_id(value.parent_message_id)
@@ -118,7 +116,7 @@ impl<'a> TryFrom<PostNextConvoRequest<'a>> for PostConvoRequest<'a> {
                 .build()?])
             .model(value.model)
             .conversation_id(value.conversation_id)
-            .arkose_token(ak)
+            .arkose_token(value.arkose_token)
             .build()?;
         Ok(body)
     }
@@ -128,16 +126,12 @@ impl<'a> TryFrom<PostContinueConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostContinueConvoRequest<'a>) -> Result<Self, Self::Error> {
-        let ak = match GPT4Model::try_from(value.model) {
-            Ok(_) => Some(ArkoseToken),
-            Err(_) => None,
-        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Continue)
             .conversation_id(value.conversation_id)
             .parent_message_id(value.parent_message_id)
             .model(value.model)
-            .arkose_token(ak)
+            .arkose_token(value.arkose_token)
             .build()?;
 
         Ok(body)
@@ -148,10 +142,6 @@ impl<'a> TryFrom<PostVaraintConvoRequest<'a>> for PostConvoRequest<'a> {
     type Error = anyhow::Error;
 
     fn try_from(value: PostVaraintConvoRequest<'a>) -> Result<Self, Self::Error> {
-        let ak = match GPT4Model::try_from(value.model) {
-            Ok(_) => Some(ArkoseToken),
-            Err(_) => None,
-        };
         let body = PostConvoRequestBuilder::default()
             .action(Action::Variant)
             .conversation_id(value.conversation_id)
@@ -167,7 +157,7 @@ impl<'a> TryFrom<PostVaraintConvoRequest<'a>> for PostConvoRequest<'a> {
                 )
                 .build()?])
             .model(value.model)
-            .arkose_token(ak)
+            .arkose_token(value.arkose_token)
             .build()?;
         Ok(body)
     }
@@ -186,6 +176,8 @@ pub struct PostNextConvoRequest<'a> {
     /// The first conversation is off the record. It can be obtained when ChatGPT replies.
     #[builder(setter(into, strip_option), default)]
     conversation_id: Option<&'a str>,
+
+    arkose_token: Option<&'a ArkoseToken>,
 }
 
 #[derive(Serialize, Builder)]
@@ -196,6 +188,8 @@ pub struct PostContinueConvoRequest<'a> {
     parent_message_id: &'a str,
     /// ID of a session. conversation_id Session ID.
     conversation_id: &'a str,
+
+    arkose_token: Option<&'a ArkoseToken>,
 }
 
 #[derive(Serialize, Builder)]
@@ -210,4 +204,6 @@ pub struct PostVaraintConvoRequest<'a> {
     parent_message_id: &'a str,
     /// The session ID must be passed on this interface.
     conversation_id: &'a str,
+
+    arkose_token: Option<&'a ArkoseToken>,
 }

@@ -22,9 +22,10 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
-use crate::oauth::OAuthClient;
+use crate::arkose_token::ArkoseToken;
+use crate::auth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucketContext;
-use crate::{info, oauth};
+use crate::{auth, info};
 
 use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
 const EMPTY: &str = "";
@@ -86,19 +87,17 @@ impl Launcher {
             .cookie_store(false)
             .build()?;
 
-        let oauth_client = oauth::OAuthClientBuilder::builder()
+        let oauth_client = auth::OAuthClientBuilder::builder()
             .user_agent(HEADER_UA)
             .chrome_builder(ChromeVersion::V108)
             .cookie_store(true)
             .pool_max_idle_per_host(self.workers)
             .build();
 
-        unsafe {
-            INIT.call_once(|| {
-                CLIENT = Some(client);
-                OAUTH_CLIENT = Some(oauth_client);
-            });
-        }
+        INIT.call_once(|| unsafe {
+            CLIENT = Some(client);
+            OAUTH_CLIENT = Some(oauth_client);
+        });
 
         info!(
             "Starting HTTP(S) server at http(s)://{}:{}",
@@ -115,6 +114,7 @@ impl Launcher {
                         .service(post_revoke_token),
                 )
                 .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
+                .service(arkose_token)
                 .service(
                     web::scope(EMPTY)
                         .wrap(middleware::TokenAuthorization)
@@ -125,6 +125,7 @@ impl Launcher {
                             web::resource("/backend-api/{tail:.*}")
                                 .route(web::to(unofficial_proxy)),
                         )
+                        .service(web::resource("/api/{tail:.*}").route(web::to(unofficial_proxy)))
                         .service(web::resource("/v1/{tail:.*}").route(web::to(official_proxy))),
                 );
 
@@ -224,7 +225,7 @@ impl Launcher {
 }
 
 #[post("/token")]
-async fn post_access_token(account: Json<oauth::OAuthAccount>) -> impl Responder {
+async fn post_access_token(account: Json<auth::OAuthAccount>) -> impl Responder {
     match oauth_client().do_access_token(account.into_inner()).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => HttpResponse::BadRequest().json(err.to_string()),
@@ -318,7 +319,7 @@ async fn official_proxy(req: HttpRequest, body: Option<Json<Value>>) -> impl Res
 /// PATCH http://{{host}}/backend-api/conversations
 /// POST http://{{host}}/backend-api/conversation/message_feedback
 async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> impl Responder {
-    gpt4_body_handle(&req, &mut body);
+    gpt4_body_handle(&req, &mut body).await;
     let builder = client()
         .request(
             req.method().clone(),
@@ -332,6 +333,14 @@ async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> im
     response_handle(resp)
 }
 
+#[actix_web::get("/test")]
+async fn arkose_token() -> impl Responder {
+    match ArkoseToken::new("gpt4").await {
+        Ok(arkose) => HttpResponse::Ok().json(arkose),
+        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+    }
+}
+
 fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::header::HeaderMap {
     headers
         .iter()
@@ -340,15 +349,17 @@ fn header_convert(headers: &actix_web::http::header::HeaderMap) -> reqwest::head
         .collect()
 }
 
-fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
+async fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
     if req.uri().path().contains("/backend-api/conversation") && req.method().as_str() == "POST" {
         if let Some(body) = body.as_mut().and_then(|b| b.as_object_mut()) {
-            use crate::api::opengpt::models::{ArkoseToken, GPT4Model};
             if let Some(v) = body.get("model").and_then(|m| m.as_str()) {
-                if GPT4Model::try_from(v).is_ok() {
-                    if let Ok(x) = serde_json::to_value(ArkoseToken) {
-                        let _ = body.insert("arkose_token".to_owned(), x);
+                match ArkoseToken::new(v).await {
+                    Ok(arkose) => {
+                        if let Ok(x) = serde_json::to_value(arkose) {
+                            let _ = body.insert("arkose_token".to_owned(), x);
+                        }
                     }
+                    Err(_) => {}
                 }
             }
         }

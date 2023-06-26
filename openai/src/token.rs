@@ -33,29 +33,32 @@ pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
 
 #[async_trait]
 pub trait AuthenticateTokenStore: Send + Sync {
-    // Store Authenticate Token return an old Token
+    /// Store Authenticate Token return an old Token
     async fn set_token(
         &mut self,
         token: AuthenticateToken,
     ) -> TokenResult<Option<AuthenticateToken>>;
 
-    // Read Authenticate Token return a copy of the Token
+    /// Read Authenticate Token return a copy of the Token
     async fn get_token(&self, email: &str) -> TokenResult<Option<AuthenticateToken>>;
 
-    // Delete Authenticate Token return an current Token
+    /// Delete Authenticate Token return an current Token
     async fn delete_token(&mut self, email: &str) -> TokenResult<Option<AuthenticateToken>>;
+
+    /// List Authenticate Token
+    async fn token_list(&self) -> TokenResult<Vec<AuthenticateToken>>;
 }
 
 #[derive(Debug)]
-pub struct MemStore(RwLock<HashMap<String, AuthenticateToken>>);
+pub struct TokenMemStore(RwLock<HashMap<String, AuthenticateToken>>);
 
-impl Default for MemStore {
+impl Default for TokenMemStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MemStore {
+impl TokenMemStore {
     /// # Examples
     ///
     /// ```
@@ -72,12 +75,12 @@ impl MemStore {
     /// println!("Profile: {:#?}", auth.get_user_info()?);
     /// ```
     pub fn new() -> Self {
-        MemStore(RwLock::new(HashMap::new()))
+        TokenMemStore(RwLock::new(HashMap::new()))
     }
 }
 
 #[async_trait]
-impl AuthenticateTokenStore for MemStore {
+impl AuthenticateTokenStore for TokenMemStore {
     async fn set_token(
         &mut self,
         token: AuthenticateToken,
@@ -101,11 +104,20 @@ impl AuthenticateTokenStore for MemStore {
             .map_err(|_| TokenStoreError::AccessError)?
             .remove(email))
     }
+
+    async fn token_list(&self) -> TokenResult<Vec<AuthenticateToken>> {
+        let binding = self.0.read().map_err(|_| TokenStoreError::AccessError)?;
+        let list = binding
+            .values()
+            .map(|v| v.clone())
+            .collect::<Vec<AuthenticateToken>>();
+        Ok(list)
+    }
 }
 
-pub struct FileStore(PathBuf);
+pub struct TokenFileStore(PathBuf);
 
-impl Default for FileStore {
+impl Default for TokenFileStore {
     fn default() -> Self {
         let default_path = PathBuf::from(crate::DEFAULT_TOKEN_FILE);
         if default_path.exists().not() {
@@ -116,11 +128,11 @@ impl Default for FileStore {
                 )
             });
         }
-        FileStore(default_path)
+        TokenFileStore(default_path)
     }
 }
 
-impl FileStore {
+impl TokenFileStore {
     pub async fn new(path: Option<PathBuf>) -> TokenResult<Self> {
         let path = path.unwrap_or(Default::default());
         if let Some(parent) = path.parent() {
@@ -131,12 +143,12 @@ impl FileStore {
         if path.exists().not() {
             tokio::fs::File::create(&path).await?;
         }
-        Ok(FileStore(path))
+        Ok(TokenFileStore(path))
     }
 }
 
 #[async_trait]
-impl AuthenticateTokenStore for FileStore {
+impl AuthenticateTokenStore for TokenFileStore {
     async fn set_token(
         &mut self,
         token: AuthenticateToken,
@@ -177,6 +189,20 @@ impl AuthenticateTokenStore for FileStore {
         let json = serde_json::to_string_pretty(&data)?;
         tokio::fs::write(&self.0, json).await?;
         Ok(v)
+    }
+
+    async fn token_list(&self) -> TokenResult<Vec<AuthenticateToken>> {
+        let bytes = tokio::fs::read(&self.0).await?;
+        if bytes.is_empty() {
+            return Ok(vec![]);
+        }
+        let data: HashMap<String, AuthenticateToken> =
+            serde_json::from_slice(&bytes).map_err(TokenStoreError::DeserializeError)?;
+        let list = data
+            .values()
+            .map(|v| v.clone())
+            .collect::<Vec<AuthenticateToken>>();
+        Ok(list)
     }
 }
 

@@ -44,6 +44,8 @@ pin-project-lite = { version = "0.2.8", optional = true}
 nom = { version = "7.1.0", optional = true}
 mime = { version = "0.3.16", optional = true}
 futures-timer = { version = "3.0.2", optional = true}
+byteorder = "1.4.3"
+tera = { version = "1.19.0", optional = true }
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched"}
@@ -51,7 +53,7 @@ h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
 [features]
 default = ["serve", "limit", "sign", "opengpt", "platform", "stream"]
-serve = ["dep:actix-web", "dep:rustls-pemfile", "dep:tokio-rustls", "dep:futures-core"]
+serve = ["dep:actix-web", "dep:rustls-pemfile", "dep:tokio-rustls", "dep:futures-core", "dep:tera"]
 opengpt = []
 platform = ["dep:tokio-util"]
 stream = [

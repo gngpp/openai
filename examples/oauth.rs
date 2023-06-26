@@ -1,12 +1,12 @@
 use std::time;
 
-use openai::oauth::OAuthAccountBuilder;
+use openai::auth::OAuthAccountBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
-    let mut auth = openai::oauth::OAuthClientBuilder::builder()
+    let mut auth = openai::auth::OAuthClientBuilder::builder()
         .user_agent(openai::api::HEADER_UA)
         .chrome_builder(reqwest::browser::ChromeVersion::V108)
         .cookie_store(true)
