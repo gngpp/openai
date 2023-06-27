@@ -6,9 +6,9 @@ async fn main() {
     let x = openai::arkose::crypto::encrypt("Hello, World", "my_secret_key");
     println!("{}", x);
 
-    let x = openai::arkose::ArkoseToken::new("gpt4-sb").await.unwrap();
+    let x = openai::arkose::ArkoseToken::new("gpt4-fuck").await.unwrap();
     println!("{:?}", x);
 
-    let x = openai::arkose::ArkoseToken::new("gpt4-sb").await.unwrap();
+    let x = openai::arkose::ArkoseToken::new("gpt4-fuck").await.unwrap();
     println!("{:?}", x)
 }
