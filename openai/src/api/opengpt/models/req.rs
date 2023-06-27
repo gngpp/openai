@@ -1,7 +1,7 @@
 use derive_builder::Builder;
 use serde::Serialize;
 
-use crate::arkose_token::ArkoseToken;
+use crate::arkose::ArkoseToken;
 
 use super::{Author, Role};
 
@@ -177,6 +177,7 @@ pub struct PostNextConvoRequest<'a> {
     #[builder(setter(into, strip_option), default)]
     conversation_id: Option<&'a str>,
 
+    #[builder(setter(into), default)]
     arkose_token: Option<&'a ArkoseToken>,
 }
 
@@ -189,6 +190,7 @@ pub struct PostContinueConvoRequest<'a> {
     /// ID of a session. conversation_id Session ID.
     conversation_id: &'a str,
 
+    #[builder(setter(into), default)]
     arkose_token: Option<&'a ArkoseToken>,
 }
 
@@ -205,5 +207,6 @@ pub struct PostVaraintConvoRequest<'a> {
     /// The session ID must be passed on this interface.
     conversation_id: &'a str,
 
+    #[builder(setter(into), default)]
     arkose_token: Option<&'a ArkoseToken>,
 }

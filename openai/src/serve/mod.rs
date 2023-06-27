@@ -22,7 +22,7 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
-use crate::arkose_token::ArkoseToken;
+use crate::arkose::ArkoseToken;
 use crate::auth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucketContext;
 use crate::{auth, info};
@@ -333,7 +333,7 @@ async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> im
     response_handle(resp)
 }
 
-#[actix_web::get("/test")]
+#[actix_web::get("/arkose/token")]
 async fn arkose_token() -> impl Responder {
     match ArkoseToken::new("gpt4").await {
         Ok(arkose) => HttpResponse::Ok().json(arkose),

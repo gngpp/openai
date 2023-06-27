@@ -1,11 +1,11 @@
+#![recursion_limit = "256"]
 pub mod api;
-pub mod arkose_token;
+pub mod arkose;
 pub mod auth;
 #[cfg(feature = "stream")]
 pub mod eventsource;
 pub mod log;
 pub mod model;
-pub mod arkose;
 pub mod unescape;
 
 #[cfg(feature = "serve")]
