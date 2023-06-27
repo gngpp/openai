@@ -27,7 +27,7 @@ use crate::auth::OAuthClient;
 use crate::serve::tokenbucket::TokenBucketContext;
 use crate::{auth, info};
 
-use super::api::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
+use crate::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
 const EMPTY: &str = "";
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;

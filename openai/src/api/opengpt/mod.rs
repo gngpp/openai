@@ -70,7 +70,7 @@ use tokio::sync::RwLock;
 
 use self::models::{req, resp};
 
-use super::{HEADER_UA, URL_CHATGPT_API};
+use crate::{HEADER_UA, URL_CHATGPT_API};
 
 pub struct OpenGPT {
     api_prefix: String,

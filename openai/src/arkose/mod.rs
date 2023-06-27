@@ -51,6 +51,7 @@ impl ArkoseToken {
             Ok(_) => {
                 INIT.call_once(|| {
                     let client = reqwest::Client::builder()
+                        .user_agent(crate::HEADER_UA)
                         .chrome_builder(reqwest::browser::ChromeVersion::V108)
                         .build()
                         .unwrap();
@@ -68,6 +69,7 @@ impl ArkoseToken {
             Ok(_) => {
                 INIT.call_once(|| {
                     let client = reqwest::Client::builder()
+                        .user_agent(crate::HEADER_UA)
                         .chrome_builder(reqwest::browser::ChromeVersion::V108)
                         .build()
                         .unwrap();
@@ -390,12 +392,12 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                 }
             ]);
 
-            let bv = "Mozilla/5.0 (X11; Linux x86_64; rv:114.0) Gecko/20100101 Firefox/114.0";
+            let bv = crate::HEADER_UA;
 
             let bt = SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros() / 1000000;
             let bw = (bt - (bt % 21600)).to_string();
 
-            let bda = encrypt(&bv, &bw);
+            let bda = encrypt(&bx.to_string(), &(bw + &bv));
             #[allow(deprecated)]
             let bda_encoded = base64::encode(&bda);
 
@@ -403,7 +405,7 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                 ("bda", &bda_encoded),
                 ("public_key", "35536E1E-65B4-4D96-9D97-6ADB7EFF8147"),
                 ("site", "https://chat.openai.com"),
-                ("userbrowser", &bv.to_string()),
+                ("userbrowser", bv),
                 ("capi_version", "1.5.2"),
                 ("capi_mode", "lightbox"),
                 ("style_theme", "default"),
@@ -413,7 +415,7 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
             let resp = client
                     .post("https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147")
                     .header("Host", "tcr9i.chat.openai.com")
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; rv:114.0) Gecko/20100101 Firefox/114.0")
+                    .header("User-Agent", bv)
                     .header("Accept", "*/*")
                     .header("Accept-Language", "en-US,en;q=0.5")
                     .header("Accept-Encoding", "gzip, deflate, br")

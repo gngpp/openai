@@ -30,6 +30,7 @@ afkEyGvifAMJFPwO78=\n\
     .as_bytes();
 
 pub type TokenResult<T, E = anyhow::Error> = anyhow::Result<T, E>;
+const DEFAULT_TOKEN_FILE: &str = ".opengpt-access_tokens";
 
 #[async_trait]
 pub trait AuthenticateTokenStore: Send + Sync {
@@ -119,7 +120,7 @@ pub struct TokenFileStore(PathBuf);
 
 impl Default for TokenFileStore {
     fn default() -> Self {
-        let default_path = PathBuf::from(crate::DEFAULT_TOKEN_FILE);
+        let default_path = PathBuf::from(DEFAULT_TOKEN_FILE);
         if default_path.exists().not() {
             std::fs::File::create(&default_path).unwrap_or_else(|_| {
                 panic!(
