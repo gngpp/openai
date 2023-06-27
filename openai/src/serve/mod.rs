@@ -7,7 +7,7 @@ pub mod tokenbucket;
 use actix_web::http::header;
 use actix_web::middleware::Logger;
 use actix_web::web::Json;
-use actix_web::{post, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, post, App, HttpResponse, HttpServer, Responder};
 use actix_web::{web, HttpRequest};
 use derive_builder::Builder;
 use reqwest::browser::ChromeVersion;
@@ -116,10 +116,11 @@ impl Launcher {
                         .service(post_revoke_token),
                 )
                 .service(arkose_token)
-                .service(
-                    actix_web_static_files::ResourceFiles::new("/site", generate())
-                        .resolve_not_found_to("auth0.html"),
-                )
+                .service(auth0_index)
+                .service(actix_web_static_files::ResourceFiles::new(
+                    "/static",
+                    generate(),
+                ))
                 .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 .service(
                     web::scope(EMPTY)
@@ -227,6 +228,18 @@ impl Launcher {
             )?),
             None => anyhow::bail!("Could not locate EC/PKCS8/RSA private keys."),
         }
+    }
+}
+
+#[get("/auth0")]
+async fn auth0_index() -> impl Responder {
+    #[cfg(target_family = "windows")]
+    {
+        HttpResponse::Ok().body(include_str!(r"..\..\templates\auth0.html"))
+    }
+    #[cfg(target_family = "unix")]
+    {
+        HttpResponse::Ok().body(include_str!("../../templates/auth0.html"))
     }
 }
 
