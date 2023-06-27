@@ -26,10 +26,15 @@ derive_builder = "0.12.0"
 jsonwebtokens = "1"
 sha2 = "0.10.6"
 hmac = { version = "0.12.1", optional = true }
-actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
 rustls-pemfile = { version = "1.0.2", optional = true }
 tokio-rustls = { version = "0.23.4", optional = true }
 futures-core = { version = "0.3.5", optional = true}
+tera = { version = "1.19.0", optional = true }
+
+# actix
+actix-web = { version = "4.3.1", features = ["rustls"], optional = true }
+actix-web-static-files = { version = "4.0", optional = true }
+static-files = { version = "0.2.3", optional = true }
 
 # redis limit
 redis = { version = "0.23.0", features = ["tokio-comp"], optional = true }
@@ -46,9 +51,6 @@ mime = { version = "0.3.16", optional = true}
 futures-timer = { version = "3.0.2", optional = true}
 byteorder = "1.4.3"
 
-# web ui
-tera = { version = "1.19.0", optional = true }
-
 # arkose
 aes = "0.8.2"
 hex = "0.4.3"
@@ -59,9 +61,12 @@ cbc = "0.1.2"
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched"}
 h2 = { git = "https://github.com/gngpp/h2.git", branch = "imp"}
 
+[build-dependencies]
+static-files = "0.2.3"
+
 [features]
 default = ["serve", "limit", "sign", "opengpt", "platform", "stream"]
-serve = ["dep:actix-web", "dep:rustls-pemfile", "dep:tokio-rustls", "dep:futures-core", "dep:tera"]
+serve = ["dep:actix-web", "dep:static-files", "dep:actix-web-static-files", "dep:rustls-pemfile", "dep:tokio-rustls", "dep:futures-core", "dep:tera"]
 opengpt = []
 platform = ["dep:tokio-util"]
 stream = ["dep:futures", "dep:tokio-stream", "dep:eventsource-stream", "dep:futures-core", "dep:pin-project-lite", "dep:nom", "dep:mime", "dep:futures-timer"]

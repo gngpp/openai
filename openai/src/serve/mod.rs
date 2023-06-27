@@ -77,6 +77,8 @@ pub struct Launcher {
     tb_expired: u32,
 }
 
+include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+
 impl Launcher {
     pub async fn run(self) -> anyhow::Result<()> {
         let client = reqwest::Client::builder()
@@ -108,13 +110,17 @@ impl Launcher {
             let app = App::new()
                 .wrap(Logger::default())
                 .service(
-                    web::scope("/oauth")
+                    web::scope("/auth")
                         .service(post_access_token)
                         .service(post_refresh_token)
                         .service(post_revoke_token),
                 )
-                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 .service(arkose_token)
+                .service(
+                    actix_web_static_files::ResourceFiles::new("/site", generate())
+                        .resolve_not_found_to("auth0.html"),
+                )
+                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 .service(
                     web::scope(EMPTY)
                         .wrap(middleware::TokenAuthorization)
