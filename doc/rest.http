@@ -94,6 +94,14 @@ GET http://{{host}}/public-api/conversation_limit
 GET http://{{host}}/backend-api/conversations?offset=0&limit=3&order=updated
 Authorization: {{bearer_token}}
 
+### get share link
+GET http://{{host}}/backend-api/shared_conversations?order=created
+Authorization: {{bearer_token}}
+
+### export data send to email
+POST http://{{host}}/backend-api/accounts/data_export
+Authorization: {{bearer_token}}
+
 ### new conversation
 POST http://{{host}}/backend-api/conversation
 Authorization: {{bearer_token}}
