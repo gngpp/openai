@@ -2,7 +2,7 @@ use std::time;
 
 use futures_util::StreamExt;
 use openai::{
-    api::opengpt::models::req::{self, PostConvoRequest},
+    opengpt::models::req::{self, PostConvoRequest},
     auth::OAuthAccountBuilder,
 };
 use tokio::io::AsyncWriteExt;
@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
                 .build()?,
         )
         .await?;
-    let api = openai::api::opengpt::OpenGPTBuilder::builder()
+    let api = openai::opengpt::OpenGPTBuilder::builder()
         .access_token(token.access_token().to_owned())
         .cookie_store(false)
         .client_timeout(time::Duration::from_secs(1000))

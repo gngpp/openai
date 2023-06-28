@@ -1,4 +1,4 @@
-use crate::api::platform::v1::resources::file::File;
+use crate::platform::v1::resources::file::File;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -1,4 +1,4 @@
-use crate::api::platform::v1::{
+use crate::platform::v1::{
     models::OpenAIModel,
     resources::shared::{FinishReason, StopToken, Usage},
 };

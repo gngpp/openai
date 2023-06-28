@@ -1,12 +1,12 @@
-use crate::api::platform::v1::api::Client;
-use crate::api::platform::v1::error::APIError;
-use crate::api::platform::v1::resources::completion::{CompletionParameters, CompletionResponse};
+use crate::platform::v1::api::Client;
+use crate::platform::v1::error::APIError;
+use crate::platform::v1::resources::completion::{CompletionParameters, CompletionResponse};
 use serde_json::Value;
 
 #[cfg(feature = "stream")]
-use crate::api::platform::v1::resources::completion_stream::CompletionStreamResponse;
+use crate::platform::v1::resources::completion_stream::CompletionStreamResponse;
 #[cfg(feature = "stream")]
-use crate::api::platform::v1::resources::shared::StopToken;
+use crate::platform::v1::resources::shared::StopToken;
 #[cfg(feature = "stream")]
 use futures::Stream;
 #[cfg(feature = "stream")]
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 
 #[cfg(feature = "simple")]
-use crate::api::platform::v1::resources::completion::SimpleCompletionParameters;
+use crate::platform::v1::resources::completion::SimpleCompletionParameters;
 
 pub struct Completions<'a> {
     pub client: &'a Client,

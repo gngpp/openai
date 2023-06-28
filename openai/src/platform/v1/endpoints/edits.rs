@@ -1,6 +1,6 @@
-use crate::api::platform::v1::api::Client;
-use crate::api::platform::v1::error::APIError;
-use crate::api::platform::v1::resources::edit::{EditParameters, EditResponse};
+use crate::platform::v1::api::Client;
+use crate::platform::v1::error::APIError;
+use crate::platform::v1::resources::edit::{EditParameters, EditResponse};
 use serde_json::Value;
 
 pub struct Edits<'a> {

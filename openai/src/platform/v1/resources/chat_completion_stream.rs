@@ -1,4 +1,4 @@
-use crate::api::platform::v1::resources::chat_completion::Role;
+use crate::platform::v1::resources::chat_completion::Role;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

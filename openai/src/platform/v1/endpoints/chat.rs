@@ -1,16 +1,16 @@
-use crate::api::platform::v1::api::Client;
-use crate::api::platform::v1::error::APIError;
-use crate::api::platform::v1::resources::chat_completion::{
+use crate::platform::v1::api::Client;
+use crate::platform::v1::error::APIError;
+use crate::platform::v1::resources::chat_completion::{
     ChatCompletionParameters, ChatCompletionResponse,
 };
 use serde_json::Value;
 
 #[cfg(feature = "stream")]
-use crate::api::platform::v1::resources::chat_completion::ChatMessage;
+use crate::platform::v1::resources::chat_completion::ChatMessage;
 #[cfg(feature = "stream")]
-use crate::api::platform::v1::resources::chat_completion_stream::ChatCompletionStreamResponse;
+use crate::platform::v1::resources::chat_completion_stream::ChatCompletionStreamResponse;
 #[cfg(feature = "stream")]
-use crate::api::platform::v1::resources::shared::StopToken;
+use crate::platform::v1::resources::shared::StopToken;
 #[cfg(feature = "stream")]
 use futures::Stream;
 #[cfg(feature = "stream")]
@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 
 #[cfg(feature = "simple")]
-use crate::api::platform::v1::resources::chat_completion::SimpleChatCompletionParameters;
+use crate::platform::v1::resources::chat_completion::SimpleChatCompletionParameters;
 
 pub struct Chat<'a> {
     pub client: &'a Client,

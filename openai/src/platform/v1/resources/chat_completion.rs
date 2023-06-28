@@ -1,6 +1,6 @@
-use crate::api::platform::v1::models::OpenAIModel;
-use crate::api::platform::v1::resources::shared::StopToken;
-use crate::api::platform::v1::resources::shared::{FinishReason, Usage};
+use crate::platform::v1::models::OpenAIModel;
+use crate::platform::v1::resources::shared::StopToken;
+use crate::platform::v1::resources::shared::{FinishReason, Usage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;

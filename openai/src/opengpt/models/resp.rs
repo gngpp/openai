@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::api::opengpt::Success;
+use crate::opengpt::Success;
 
 use super::{Author, Role};
 

@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
-pub mod api;
+pub mod opengpt;
+pub mod platform;
 pub mod arkose;
 pub mod auth;
 #[cfg(feature = "stream")]

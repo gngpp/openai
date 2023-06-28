@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 #[cfg(feature = "download")]
-use crate::api::platform::v1::error::APIError;
+use crate::platform::v1::error::APIError;
 #[cfg(feature = "download")]
-use crate::api::platform::v1::resources::shared::generate_file_name;
+use crate::platform::v1::resources::shared::generate_file_name;
 #[cfg(feature = "download")]
 use base64::{engine::general_purpose, Engine as _};
 #[cfg(feature = "download")]

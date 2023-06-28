@@ -1,7 +1,7 @@
-use crate::api::platform::v1::api::file_from_disk_to_form_part;
-use crate::api::platform::v1::api::Client;
-use crate::api::platform::v1::error::APIError;
-use crate::api::platform::v1::resources::file::{DeletedFile, File, UploadFileParameters};
+use crate::platform::v1::api::file_from_disk_to_form_part;
+use crate::platform::v1::api::Client;
+use crate::platform::v1::error::APIError;
+use crate::platform::v1::resources::file::{DeletedFile, File, UploadFileParameters};
 use serde_json::Value;
 
 pub struct Files<'a> {

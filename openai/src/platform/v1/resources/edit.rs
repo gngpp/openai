@@ -1,4 +1,4 @@
-use crate::api::platform::v1::{models::OpenAIModel, resources::shared::Usage};
+use crate::platform::v1::{models::OpenAIModel, resources::shared::Usage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, Clone)]
