@@ -16,15 +16,14 @@ async fn main() -> anyhow::Result<()> {
     let token = auth
         .do_access_token(
             OAuthAccountBuilder::default()
-                .email(email)
+                .username(email)
                 .password(password)
                 .build()?,
         )
         .await?;
-    println!("AccessToken: {}", token.access_token());
-    println!("RefreshToken: {}", token.refresh_token());
-    println!("Profile: {:#?}", token.profile());
+    println!("AccessToken: {}", token.access_token);
+    println!("RefreshToken: {}", token.refresh_token);
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    auth.do_refresh_token(token.refresh_token()).await?;
+    auth.do_refresh_token(&token.refresh_token).await?;
     Ok(())
 }

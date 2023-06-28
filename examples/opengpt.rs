@@ -20,13 +20,13 @@ async fn main() -> anyhow::Result<()> {
     let token = auth
         .do_access_token(
             OAuthAccountBuilder::default()
-                .email(email)
+                .username(email)
                 .password(password)
                 .build()?,
         )
         .await?;
     let api = openai::opengpt::OpenGPTBuilder::builder()
-        .access_token(token.access_token().to_owned())
+        .access_token(token.access_token.to_owned())
         .cookie_store(false)
         .client_timeout(time::Duration::from_secs(1000))
         .client_connect_timeout(time::Duration::from_secs(1000))

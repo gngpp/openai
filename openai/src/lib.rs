@@ -39,8 +39,6 @@ pub enum OAuthError {
     FailedLogin,
     #[error(transparent)]
     FailedRequest(#[from] reqwest::Error),
-    #[error("failed logged in")]
-    FailedLoginIn,
     #[error("failed get code from callback url")]
     FailedCallbackCode,
     #[error("failed callback url")]
