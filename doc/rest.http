@@ -5,14 +5,14 @@
 @refresh_token=
 @email=
 @password=
-@session_id=
+@session_id= #You need to login with your email password to extract sensitive_id
 @bearer_token=Bearer {{access_token}}
 @bearer_refresh_token=Bearer {{refresh_token}}
 @bearer_session_id=Bearer {{session_id}}
 
 /// oauth ///
 ### you may need the MFA parameter to log in
-POST http://{{host}}/oauth/token
+POST http://{{host}}/auth/token
 Content-Type: application/json
 
 {
@@ -21,15 +21,15 @@ Content-Type: application/json
 }
 
 ### 
-POST http://{{host}}/oauth/refresh_token
+POST http://{{host}}/auth/refresh_token
 Authorization: {{bearer_refresh_token}}
 
 ###
-POST http://{{host}}/oauth/revoke_token
+POST http://{{host}}/auth/revoke_token
 Authorization: {{bearer_refresh_token}}
 
 /// dashboard ///
-### 
+### this is extract sensitive_id
 POST http://{{host}}/dashboard/onboarding/login
 Authorization: {{bearer_token}}
 
