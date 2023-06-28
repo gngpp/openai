@@ -118,8 +118,9 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
     match client {
         Some(client) => {
             let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            let bx = serde_json::json!(
 
-            let bx = serde_json::json!([
+            [
                 {
                     "key":"api_type",
                     "value":"js"
@@ -130,7 +131,7 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                 },
                 {
                     "key":"f",
-                    "value":"9711bd3695defe0844fb8fd8a722f38b"
+                    "value":"3bafd9d65c4d3ed67bc5fdb2e6f98311"
                 },
                 {
                     "key":"n",
@@ -367,7 +368,7 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                         "ODB:false",
                         "CPUC:unknown",
                         "PK:Linux x86_64",
-                        "CFP:330110783",
+                        "CFP:-1568981108",
                         "FR:false",
                         "FOS:false",
                         "FB:false",
@@ -380,7 +381,7 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                 },
                 {
                     "key":"ife_hash",
-                    "value":"2a007a5daef41ee943d5fc73a0a8c312"
+                    "value":"8b524442a7ed10af3f39ec3bca28565c"
                 },
                 {
                     "key":"cs",
@@ -390,7 +391,9 @@ async fn get_arkose_token(client: Option<&reqwest::Client>) -> anyhow::Result<Ar
                     "key":"jsbd",
                     "value":"{\"HL\":2,\"NCE\":true,\"DT\":\"\",\"NWD\":\"false\",\"DOTO\":1,\"DMTO\":1}"
                 }
-            ]);
+            ]
+
+            );
 
             let bv = crate::HEADER_UA;
 
