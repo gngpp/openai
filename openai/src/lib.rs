@@ -1,12 +1,12 @@
 #![recursion_limit = "256"]
-pub mod opengpt;
-pub mod platform;
 pub mod arkose;
 pub mod auth;
 #[cfg(feature = "stream")]
 pub mod eventsource;
 pub mod log;
 pub mod model;
+pub mod opengpt;
+pub mod platform;
 pub mod unescape;
 
 #[cfg(feature = "serve")]

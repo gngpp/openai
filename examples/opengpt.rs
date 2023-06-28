@@ -2,8 +2,8 @@ use std::time;
 
 use futures_util::StreamExt;
 use openai::{
-    opengpt::models::req::{self, PostConvoRequest},
     auth::OAuthAccountBuilder,
+    opengpt::models::req::{self, PostConvoRequest},
 };
 use tokio::io::AsyncWriteExt;
 

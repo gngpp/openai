@@ -110,6 +110,27 @@ impl Launcher {
             let app = App::new()
                 .wrap(Logger::default())
                 .service(
+                    web::resource("/dashboard/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(official_proxy)),
+                )
+                .service(
+                    web::resource("/backend-api/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(unofficial_proxy)),
+                )
+                .service(
+                    web::resource("/api/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(unofficial_proxy)),
+                )
+                .service(
+                    web::resource("/v1/{tail:.*}")
+                        .wrap(middleware::TokenAuthorization)
+                        .route(web::to(official_proxy)),
+                )
+                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
+                .service(
                     web::scope("/auth")
                         .service(post_access_token)
                         .service(post_refresh_token)
@@ -117,23 +138,9 @@ impl Launcher {
                 )
                 .service(arkose_token)
                 .service(auth0_index)
-                .service(actix_web_static_files::ResourceFiles::new(
-                    "/static",
-                    generate(),
-                ))
-                .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 .service(
                     web::scope(EMPTY)
-                        .wrap(middleware::TokenAuthorization)
-                        .service(
-                            web::resource("/dashboard/{tail:.*}").route(web::to(official_proxy)),
-                        )
-                        .service(
-                            web::resource("/backend-api/{tail:.*}")
-                                .route(web::to(unofficial_proxy)),
-                        )
-                        .service(web::resource("/api/{tail:.*}").route(web::to(unofficial_proxy)))
-                        .service(web::resource("/v1/{tail:.*}").route(web::to(official_proxy))),
+                        .service(actix_web_static_files::ResourceFiles::new("/", generate())),
                 );
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
