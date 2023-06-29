@@ -1,6 +1,6 @@
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open('pandora-cloud-cache').then(function (cache) {
+        caches.open('opengpt-cloud-cache').then(function (cache) {
             return cache.addAll([
                 '/apple-touch-icon.png',
                 '/favicon-16x16.png',
