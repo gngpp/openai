@@ -1,0 +1,17 @@
+{
+  "short_name": "ChatGPT",
+  "name": "ChatGPT app powered by Pandora",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#343540",
+  "theme_color": "#343540"
+}

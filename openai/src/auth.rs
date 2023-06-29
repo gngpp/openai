@@ -587,6 +587,20 @@ pub struct OAuthAccount {
     mfa: Option<String>,
 }
 
+impl OAuthAccount {
+    pub fn username(&self) -> &str {
+        self.username.as_ref()
+    }
+
+    pub fn password(&self) -> &str {
+        self.password.as_ref()
+    }
+
+    pub fn mfa(&self) -> Option<&String> {
+        self.mfa.as_ref()
+    }
+}
+
 pub struct OAuthClientBuilder {
     builder: reqwest::ClientBuilder,
     oauth: OAuthClient,

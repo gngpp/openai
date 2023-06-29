@@ -1,7 +1,12 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use openai::serve::{tokenbucket, LauncherBuilder};
-use std::{io::Write, path::PathBuf, sync::Once, time::Duration};
+use std::{
+    io::Write,
+    path::PathBuf,
+    sync::{Arc, Once},
+    time::Duration,
+};
 
 pub mod account;
 pub mod prompt;
@@ -11,10 +16,6 @@ pub mod util;
 #[derive(Parser)]
 #[clap(author, version, about)]
 struct Opt {
-    /// Enable debug
-    #[clap(long, global = true, env = "OPENGPT_DEBUG", value_parser = initialize_log)]
-    debug: bool,
-
     #[clap(subcommand)]
     command: Option<SubCommands>,
 }
@@ -23,6 +24,9 @@ struct Opt {
 enum SubCommands {
     /// Start the http server
     Serve {
+        /// Enable debug
+        #[clap(short = 'D', long, env = "OPENGPT_DEBUG", value_parser = initialize_log)]
+        debug: bool,
         /// Server Listen host
         #[clap(short = 'H', long, env = "OPENGPT_HOST", default_value = "0.0.0.0", value_parser = parse_host)]
         host: Option<std::net::IpAddr>,
@@ -118,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
                 unofficial_proxy: _,
             } => {}
             SubCommands::Serve {
+                debug: _,
                 host,
                 port,
                 workers,
@@ -162,7 +167,29 @@ async fn main() -> anyhow::Result<()> {
                 builder.build()?.run().await?
             }
         },
-        None => prompt::main_prompt()?,
+        None => {
+            let (sync_io_tx, mut sync_io_rx) = tokio::sync::mpsc::channel::<ui::io::IoEvent>(100);
+
+            // We need to share the App between thread
+            let app = Arc::new(tokio::sync::Mutex::new(ui::app::App::new(
+                sync_io_tx.clone(),
+            )));
+            let app_ui = Arc::clone(&app);
+
+            // Configure log
+            tui_logger::init_logger(log::LevelFilter::Debug)?;
+            tui_logger::set_default_level(log::LevelFilter::Debug);
+
+            // Handle IO in a specifc thread
+            tokio::spawn(async move {
+                let mut handler = ui::io::handler::IoAsyncHandler::new(app);
+                while let Some(io_event) = sync_io_rx.recv().await {
+                    handler.handle_io_event(io_event).await;
+                }
+            });
+
+            ui::start_ui(&app_ui).await?
+        }
     }
     Ok(())
 }

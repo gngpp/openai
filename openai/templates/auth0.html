@@ -7,7 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>ChatGPT Auth</title>
     <link id="pagestyle" href="/corporate-ui-dashboard.css" rel="stylesheet">
-    <link rel="shortcut icon" href="/img/favicon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <style data-id="immersive-translate-input-injected-css">
         .immersive-translate-input {
             position: absolute;
@@ -95,7 +96,7 @@
                                     <form role="form" id="loginForm">
                                         <label>邮箱</label>
                                         <div class="mb-3">
-                                            <input type="email" name="email" id="txtEmail" class="form-control"
+                                            <input type="username" name="username" id="txtUsername" class="form-control"
                                                 placeholder="Enter your email address">
                                         </div>
                                         <label>密码</label>
@@ -128,7 +129,7 @@
                         <div class="col-md-6">
                             <div class="position-absolute w-40 top-0 end-0 h-100 d-md-block d-none">
                                 <div class="oblique-image position-absolute fixed-top ms-auto h-100 z-index-0 bg-cover ms-n8"
-                                    style="background-image: url(&#39;/img/dall-e.webp&#39;);">
+                                    style="background-image: url(&#39;/dall-e.webp&#39;);">
                                     <div
                                         class="blur mt-12 p-4 text-center border border-white border-radius-md position-absolute fixed-bottom m-4">
                                         <h2 class="mt-3 text-dark font-weight-bold">OpenAI, not CloseAI.</h2>
@@ -159,19 +160,19 @@
                     $(".copy-result").removeClass('text-success').addClass('text-danger').text("复制失败。");
                 });
 
-                let $txtEmail = $("#txtEmail");
+                let txtUsername = $("#txtUsername");
                 let $txtPassword = $("#txtPassword");
                 let $btnGetAccessToken = $("#btnGetAccessToken");
 
-                $txtEmail.focus();
+                txtUsername.focus();
 
                 $btnGetAccessToken.click(function (e) {
                     e.preventDefault();
                     e.stopPropagation();
 
-                    if ("" === $txtEmail.val()) {
+                    if ("" === txtUsername.val()) {
                         alert("邮箱不能为空！");
-                        $txtEmail.focus();
+                        txtUsername.focus();
                         return false;
                     }
 
@@ -183,19 +184,11 @@
 
                     $btnGetAccessToken.addClass('disabled').text("正在获取 Access Token...");
 
-                    var formElement = document.getElementById("loginForm");
-                    var formData = new FormData(formElement);
-
-                    var jsonData = {};
-                    formData.forEach(function (value, key) {
-                        jsonData[key] = value;
-                    });
 
                     $.ajax({
                         url: '/auth/token',
                         method: "POST",
-                        data: JSON.stringify(jsonData),
-                        contentType: "application/json; charset=utf-8",
+                        data: $("#loginForm").serialize(),
                         success: (data) => {
                             $("#accessToken").text(data.access_token);
                             $("#fullData").text(JSON.stringify(data, null, 2));

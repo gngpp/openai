@@ -4,6 +4,7 @@ use crate::{model::AuthenticateToken, OAuthError, TokenStoreError};
 use anyhow::Context;
 
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
+use serde::{Deserialize, Serialize};
 
 use std::{collections::HashMap, sync::RwLock};
 
@@ -239,10 +240,10 @@ async fn keys() -> TokenResult<KeyResult> {
     anyhow::bail!(OAuthError::FailedPubKeyRequest)
 }
 
-fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
+fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<TokenProfile> {
     let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
     let verifier = Verifier::create().build()?;
-    let claims: serde_json::Value = verifier.verify(token, &alg)?;
+    let claims = verifier.verify(token, &alg)?;
     let claims_str = claims.to_string();
     if claims_str.contains("https://openai.openai.auth0app.com/userinfo")
         && claims_str.contains("https://auth0.openai.com/")
@@ -250,23 +251,23 @@ fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<()> {
         && claims_str.contains("model.read")
         && claims_str.contains("model.request")
     {
-        return Ok(());
+        return Ok(serde_json::from_value(claims)?);
     }
     anyhow::bail!(OAuthError::InvalidAccessToken)
 }
 
-pub async fn verify_access_token_for_u8(token: &[u8]) -> TokenResult<()> {
+pub async fn verify_access_token_for_u8(token: &[u8]) -> TokenResult<Option<TokenProfile>> {
     let x = String::from_utf8(token.to_vec())?;
     verify_access_token(&x).await
 }
 
-pub async fn verify_access_token(token: &str) -> TokenResult<()> {
+pub async fn verify_access_token(token: &str) -> TokenResult<Option<TokenProfile>> {
     let token = token.trim_start_matches("Bearer ");
     if token.starts_with("sk-") || token.starts_with("sess-") {
-        return Ok(());
+        return Ok(None);
     }
     match verify(token, PUBLIC_KEY, AlgorithmID::RS256) {
-        Ok(_) => Ok(()),
+        Ok(v) => Ok(Some(v)),
         #[cfg(not(feature = "remote-token"))]
         Err(err) => Err(err),
         #[cfg(feature = "remote-token")]
@@ -282,4 +283,45 @@ pub async fn verify_access_token(token: &str) -> TokenResult<()> {
             verify(token, pub_key.as_bytes(), alg)
         }
     }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenProfile {
+    #[serde(rename = "https://api.openai.com/profile")]
+    pub https_api_openai_com_profile: HttpsApiOpenaiComProfile,
+    #[serde(rename = "https://api.openai.com/auth")]
+    pub https_api_openai_com_auth: HttpsApiOpenaiComAuth,
+    pub iss: String,
+    pub sub: String,
+    pub aud: Vec<String>,
+    pub iat: i64,
+    pub exp: i64,
+    pub azp: String,
+    pub scope: String,
+}
+
+impl TokenProfile {
+    pub fn email(&self) -> &str {
+        &self.https_api_openai_com_profile.email
+    }
+
+    pub fn user_id(&self) -> &str {
+        &self.https_api_openai_com_auth.user_id
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpsApiOpenaiComProfile {
+    pub email: String,
+    #[serde(rename = "email_verified")]
+    pub email_verified: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpsApiOpenaiComAuth {
+    #[serde(rename = "user_id")]
+    pub user_id: String,
 }

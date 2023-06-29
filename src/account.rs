@@ -93,11 +93,16 @@ impl AccountStore for AccountFileStore {
 pub(crate) struct Account {
     email: String,
     password: String,
+    authenticate_token: Option<openai::model::AuthenticateToken>,
 }
 
 #[allow(dead_code)]
 impl Account {
     pub(crate) fn new(email: String, password: String) -> Self {
-        Self { email, password }
+        Self {
+            email,
+            password,
+            authenticate_token: None,
+        }
     }
 }
