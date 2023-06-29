@@ -41,7 +41,7 @@ pub struct OAuthClient {
 }
 
 impl OAuthClient {
-    pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<AuthenticateSession> {
+    pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<Session> {
         let resp = self
             .client
             .post(format!("{OPENAI_API_URL}/dashboard/onboarding/login"))
@@ -52,11 +52,7 @@ impl OAuthClient {
         self.response_handle(resp).await
     }
 
-    pub async fn do_get_api_key(
-        &self,
-        sensitive_id: &str,
-        name: &str,
-    ) -> OAuthResult<AuthenticateApiKey> {
+    pub async fn do_get_api_key(&self, sensitive_id: &str, name: &str) -> OAuthResult<ApiKey> {
         let data = ApiKeyDataBuilder::default()
             .action("create")
             .name(name)
@@ -72,10 +68,7 @@ impl OAuthClient {
         self.response_handle(resp).await
     }
 
-    pub async fn do_get_api_key_list(
-        &self,
-        sensitive_id: &str,
-    ) -> OAuthResult<AuthenticateApiKeyList> {
+    pub async fn do_get_api_key_list(&self, sensitive_id: &str) -> OAuthResult<ApiKeyList> {
         let resp = self
             .client
             .get(format!("{OPENAI_API_URL}/dashboard/user/api_keys"))
@@ -91,7 +84,7 @@ impl OAuthClient {
         sensitive_id: &str,
         redacted_key: &str,
         created_at: u64,
-    ) -> OAuthResult<AuthenticateApiKey> {
+    ) -> OAuthResult<ApiKey> {
         let data = ApiKeyDataBuilder::default()
             .action("delete")
             .redacted_key(redacted_key)
@@ -108,7 +101,7 @@ impl OAuthClient {
         self.response_handle(resp).await
     }
 
-    pub async fn do_access_token(&self, account: OAuthAccount) -> OAuthResult<AccessToken> {
+    pub async fn do_access_token(&self, account: &OAuthAccount) -> OAuthResult<AccessToken> {
         if !self.email_regex.is_match(&account.username) || account.password.is_empty() {
             bail!(OAuthError::InvalidEmailOrPassword)
         }
@@ -174,7 +167,7 @@ impl OAuthClient {
         state: &str,
         location: &str,
         referrer: &str,
-        account: OAuthAccount,
+        account: &OAuthAccount,
     ) -> OAuthResult<AccessToken> {
         let data = AuthenticateDataBuilder::default()
             .action("default")
@@ -213,7 +206,7 @@ impl OAuthClient {
         code_verifier: &str,
         location: &str,
         referrer: &str,
-        account: OAuthAccount,
+        account: &OAuthAccount,
     ) -> OAuthResult<AccessToken> {
         let resp = self
             .client
@@ -232,7 +225,7 @@ impl OAuthClient {
         let location: &str = Self::get_location_path(&headers)?;
         if location.starts_with("/u/mfa-otp-challenge?") {
             let mfa = account.mfa.clone().ok_or(OAuthError::MFARequired)?;
-            self.authenticate_mfa(mfa.as_str(), code_verifier, location, account)
+            self.authenticate_mfa(&mfa, code_verifier, location, account)
                 .await
         } else if !location.starts_with(OPENAI_OAUTH_CALLBACK_URL) {
             bail!(OAuthError::FailedCallbackURL)
@@ -247,7 +240,7 @@ impl OAuthClient {
         mfa_code: &str,
         code_verifier: &str,
         location: &str,
-        account: OAuthAccount,
+        account: &OAuthAccount,
     ) -> OAuthResult<AccessToken> {
         let url = format!("{OPENAI_OAUTH_URL}{}", location);
         let state = Self::get_callback_state(&Url::parse(&url)?);
@@ -277,7 +270,7 @@ impl OAuthClient {
         if location.starts_with("/authorize/resume?") && account.mfa.is_none() {
             bail!(OAuthError::MFAFailed)
         }
-        self.authenticate_resume(code_verifier, location, &url, account)
+        self.authenticate_resume(code_verifier, location, &url, &account)
             .await
     }
 
@@ -596,8 +589,8 @@ impl OAuthAccount {
         self.password.as_ref()
     }
 
-    pub fn mfa(&self) -> Option<&String> {
-        self.mfa.as_ref()
+    pub fn mfa(&self) -> Option<&str> {
+        self.mfa.as_deref()
     }
 }
 
@@ -608,15 +601,19 @@ pub struct OAuthClientBuilder {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthenticateSession {
+pub struct Session {
     pub object: String,
     pub user: User,
     pub invites: Vec<Value>,
 }
 
-impl AuthenticateSession {
+impl Session {
     pub fn sensitive_id(&self) -> &str {
         &self.user.session.sensitive_id
+    }
+
+    pub fn picture(&self) -> &str {
+        &self.user.picture
     }
 }
 
@@ -630,7 +627,7 @@ pub struct User {
     pub picture: String,
     pub created: i64,
     pub groups: Vec<Value>,
-    pub session: Session,
+    pub session: VSession,
     pub orgs: Orgs,
     #[serde(rename = "intercom_hash")]
     pub intercom_hash: String,
@@ -639,7 +636,7 @@ pub struct User {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Session {
+pub struct VSession {
     #[serde(rename = "sensitive_id")]
     pub sensitive_id: String,
     pub object: String,
@@ -675,14 +672,14 @@ pub struct Daum {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthenticateApiKey {
+pub struct ApiKey {
     pub result: String,
     pub key: Option<Key>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthenticateApiKeyList {
+pub struct ApiKeyList {
     pub object: String,
     pub data: Vec<Key>,
 }

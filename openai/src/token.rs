@@ -1,4 +1,8 @@
-use std::{ops::Not, path::PathBuf};
+use std::{
+    ops::Not,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{model::AuthenticateToken, OAuthError, TokenStoreError};
 use anyhow::Context;
@@ -308,6 +312,18 @@ impl TokenProfile {
 
     pub fn user_id(&self) -> &str {
         &self.https_api_openai_com_auth.user_id
+    }
+
+    pub fn expires_at(&self) -> i64 {
+        self.exp
+    }
+
+    pub fn expires(&self) -> i64 {
+        let current_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Failed to get current timestamp.")
+            .as_secs();
+        self.exp - (current_timestamp as i64)
     }
 }
 
