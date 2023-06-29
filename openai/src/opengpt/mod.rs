@@ -378,7 +378,7 @@ impl OpenGPT {
         req: req::MessageFeedbackRequest<'a>,
     ) -> ApiResult<resp::MessageFeedbackResponse> {
         self.request_payload(
-            format!("{}/conversation/message_feedbak", self.api_prefix),
+            format!("{}/conversation/message_feedback", self.api_prefix),
             RequestMethod::POST,
             &req,
         )
