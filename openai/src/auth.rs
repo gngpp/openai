@@ -716,7 +716,7 @@ impl OAuthClientBuilder {
     /// response body has finished.
     ///
     /// Default is no timeout.
-    pub fn client_timeout(mut self, timeout: Duration) -> Self {
+    pub fn timeout(mut self, timeout: Duration) -> Self {
         self.builder = self.builder.timeout(timeout);
         self
     }
@@ -729,7 +729,7 @@ impl OAuthClientBuilder {
     ///
     /// This **requires** the futures be executed in a tokio runtime with
     /// a tokio timer enabled.
-    pub fn client_connect_timeout(mut self, timeout: Duration) -> Self {
+    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
         self.builder = self.builder.connect_timeout(timeout);
         self
     }

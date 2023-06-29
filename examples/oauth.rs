@@ -10,8 +10,8 @@ async fn main() -> anyhow::Result<()> {
         .user_agent(openai::HEADER_UA)
         .chrome_builder(reqwest::browser::ChromeVersion::V108)
         .cookie_store(true)
-        .client_timeout(time::Duration::from_secs(1000))
-        .client_connect_timeout(time::Duration::from_secs(1000))
+        .timeout(time::Duration::from_secs(1000))
+        .connect_timeout(time::Duration::from_secs(1000))
         .build();
     let token = auth
         .do_access_token(

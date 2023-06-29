@@ -5,7 +5,6 @@ use std::{
     io::Write,
     path::PathBuf,
     sync::{Arc, Once},
-    time::Duration,
 };
 use url::Url;
 
@@ -37,7 +36,13 @@ enum SubCommands {
         /// Server worker-pool size (Recommended number of CPU cores)
         #[clap(short = 'W', long, env = "OPENGPT_WORKERS", default_value = "1")]
         workers: usize,
-        /// TCP keepalive (second)
+        /// Client timeout(secends)
+        #[clap(long, env = "OPENGPT_TIMEOUT", default_value = "600")]
+        timeout: usize,
+        /// Client connect timeout(secends)
+        #[clap(long, env = "OPENGPT_CONNECT_TIMEOUT", default_value = "60")]
+        connect_timeout: usize,
+        /// TCP keepalive (secends)
         #[clap(long, env = "OPENGPT_TCP_KEEPALIVE", default_value = "5")]
         tcp_keepalive: usize,
         /// TLS certificate file path
@@ -130,6 +135,8 @@ async fn main() -> anyhow::Result<()> {
                 host,
                 port,
                 workers,
+                timeout,
+                connect_timeout,
                 tcp_keepalive,
                 tls_cert,
                 tls_key,
@@ -152,7 +159,9 @@ async fn main() -> anyhow::Result<()> {
                     .host(host.unwrap())
                     .port(port.unwrap())
                     .tls_keypair(None)
-                    .tcp_keepalive(Duration::from_secs(tcp_keepalive as u64))
+                    .tcp_keepalive(tcp_keepalive)
+                    .timeout(timeout)
+                    .connect_timeout(connect_timeout)
                     .api_prefix(api_prefix)
                     .workers(workers);
 

@@ -62,7 +62,11 @@ pub struct Launcher {
     /// Machine worker pool
     workers: usize,
     /// TCP keepalive (second)
-    tcp_keepalive: Duration,
+    tcp_keepalive: usize,
+    /// Client timeout
+    timeout: usize,
+    /// Client connect timeout
+    connect_timeout: usize,
     /// TLS keypair
     tls_keypair: Option<(PathBuf, PathBuf)>,
     /// Web UI api prefix
@@ -71,8 +75,10 @@ pub struct Launcher {
     #[cfg(feature = "sign")]
     sign_secret_key: Option<String>,
     /// Enable Tokenbucket
+    #[cfg(feature = "limit")]
     tb_enable: bool,
     /// Tokenbucket store strategy
+    #[cfg(feature = "limit")]
     tb_store_strategy: tokenbucket::Strategy,
     /// Tokenbucket capacity
     #[cfg(feature = "limit")]
@@ -90,7 +96,9 @@ impl Launcher {
         let client = reqwest::Client::builder()
             .user_agent(HEADER_UA)
             .chrome_builder(ChromeVersion::V108)
-            .tcp_keepalive(Some(self.tcp_keepalive))
+            .tcp_keepalive(Some(Duration::from_secs((self.tcp_keepalive + 1) as u64)))
+            .timeout(Duration::from_secs((self.timeout + 1) as u64))
+            .connect_timeout(Duration::from_secs((self.connect_timeout + 1) as u64))
             .pool_max_idle_per_host(self.workers)
             .cookie_store(false)
             .build()?;
@@ -99,6 +107,8 @@ impl Launcher {
             .user_agent(HEADER_UA)
             .chrome_builder(ChromeVersion::V108)
             .cookie_store(true)
+            .timeout(Duration::from_secs((self.timeout + 1) as u64))
+            .connect_timeout(Duration::from_secs((self.connect_timeout + 1) as u64))
             .pool_max_idle_per_host(self.workers)
             .build();
 
@@ -194,7 +204,9 @@ impl Launcher {
             #[cfg(not(any(feature = "sign", feature = "limit")))]
             app
         })
-        .keep_alive(self.tcp_keepalive)
+        .client_request_timeout(Duration::from_secs(self.timeout as u64))
+        .tls_handshake_timeout(Duration::from_secs(self.connect_timeout as u64))
+        .keep_alive(Duration::from_secs(self.tcp_keepalive as u64))
         .workers(self.workers);
         match self.tls_keypair {
             Some(keypair) => {
