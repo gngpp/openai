@@ -21,6 +21,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Once;
 use std::time::Duration;
+use url::Url;
 
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -28,6 +29,7 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::arkose::ArkoseToken;
 use crate::auth::OAuthClient;
+use crate::serve::template::TemplateData;
 use crate::serve::tokenbucket::TokenBucketContext;
 use crate::{auth, info};
 
@@ -63,6 +65,8 @@ pub struct Launcher {
     tcp_keepalive: Duration,
     /// TLS keypair
     tls_keypair: Option<(PathBuf, PathBuf)>,
+    /// Web UI api prefix
+    api_prefix: Option<Url>,
     /// Enable url signature (signature secret key)
     #[cfg(feature = "sign")]
     sign_secret_key: Option<String>,
@@ -108,6 +112,15 @@ impl Launcher {
             self.host, self.port
         );
 
+        if let Some(url) = &self.api_prefix {
+            info!("Web UI site use api: {url}")
+        }
+
+        // template data
+        let template_data = TemplateData {
+            api_prefix: self.api_prefix.map_or("".to_owned(), |v| v.to_string()),
+        };
+        // serve
         let serve = HttpServer::new(move || {
             let app = App::new()
                 .wrap(Logger::default())
@@ -139,6 +152,8 @@ impl Launcher {
                 // static files endpoint
                 .service(
                     web::scope(EMPTY)
+                        // templates data
+                        .app_data(template_data.clone())
                         // templates page endpoint
                         .configure(template::config),
                 );

@@ -21,6 +21,12 @@ struct Session<'a> {
     picture: &'a str,
 }
 
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(super) struct TemplateData {
+    pub(crate) api_prefix: String,
+}
+
 async fn static_service(
     resource_map: web::Data<HashMap<&'static str, ::static_files::Resource>>,
     path: web::Path<String>,
@@ -44,6 +50,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(get_logout)
         .service(get_chat)
         .service(get_chat_conversation)
+        .service(get_share_chat_conversation)
         .service(get_session)
         .service(get_account_check)
         .service(e404)
@@ -134,6 +141,67 @@ async fn get_chat_conversation(
             Ok(token_profile) => match token_profile {
                 Some(profile) => {
                     let conversation_id = conversation_id.into_inner();
+                    query.insert("chatId".to_string(), conversation_id.clone());
+                    let props = serde_json::json!({
+                        "props": {
+                            "pageProps": {
+                                "user": {
+                                    "id": profile.user_id(),
+                                    "name": profile.email(),
+                                    "email": profile.email(),
+                                    "image": "",
+                                    "picture": "",
+                                    "groups": [],
+                                },
+                                "serviceStatus": {},
+                                "userCountry": "US",
+                                "geoOk": true,
+                                "serviceAnnouncement": {
+                                    "paid": {},
+                                    "public": {}
+                                },
+                                "isUserInCanPayGroup": true
+                            },
+                            "__N_SSP": true
+                        },
+                        "page": "/c/[chatId]",
+                        "query": hashmap_to_query_string(&query.into_inner()),
+                        "buildId": BUILD_ID,
+                        "isFallback": false,
+                        "gssp": true,
+                        "scriptLoader": []
+                    });
+
+                    let mut ctx = tera::Context::new();
+                    ctx.insert("props", &props.to_string());
+                    let tm = tmpl
+                        .render("detail.html", &ctx)
+                        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
+                        .unwrap();
+                    HttpResponse::Ok()
+                        .content_type(header::ContentType::html())
+                        .body(tm)
+                }
+                None => HttpResponse::InternalServerError().finish(),
+            },
+            Err(_) => redirect_login(),
+        },
+        None => redirect_login(),
+    }
+}
+
+#[get("/share/{share_id}")]
+async fn get_share_chat_conversation(
+    tmpl: web::Data<tera::Tera>,
+    req: HttpRequest,
+    mut query: web::Query<HashMap<String, String>>,
+    share_id: web::Path<String>,
+) -> impl Responder {
+    match req.cookie(SESSION_ID) {
+        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
+            Ok(token_profile) => match token_profile {
+                Some(profile) => {
+                    let conversation_id = share_id.into_inner();
                     query.insert("chatId".to_string(), conversation_id.clone());
                     let props = serde_json::json!({
                         "props": {

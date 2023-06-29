@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Once},
     time::Duration,
 };
+use url::Url;
 
 pub mod account;
 pub mod prompt;
@@ -45,6 +46,9 @@ enum SubCommands {
         /// TLS private key file path (EC/PKCS8/RSA)
         #[clap(long, env = "OPENGPT_TLS_KEY", requires = "tls_cert")]
         tls_key: Option<PathBuf>,
+        /// Web UI api prefix
+        #[clap(long, env = "OPENGPT_UI_API_PREFIX", value_parser = parse_proxy_url)]
+        api_prefix: Option<Url>,
         /// Enable url signature (signature secret key)
         #[clap(short = 'S', long, env = "OPENGPT_SIGNATURE")]
         #[cfg(feature = "sign")]
@@ -129,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
                 tcp_keepalive,
                 tls_cert,
                 tls_key,
+                api_prefix,
                 #[cfg(feature = "sign")]
                 sign_secret_key,
                 #[cfg(feature = "limit")]
@@ -148,6 +153,7 @@ async fn main() -> anyhow::Result<()> {
                     .port(port.unwrap())
                     .tls_keypair(None)
                     .tcp_keepalive(Duration::from_secs(tcp_keepalive as u64))
+                    .api_prefix(api_prefix)
                     .workers(workers);
 
                 #[cfg(feature = "limit")]
@@ -249,7 +255,7 @@ fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<url::Url> {
         .context("The Proxy Url format must be `protocol://user:pass@ip:port`")?;
     let protocol = url.scheme().to_string();
     match protocol.as_str() {
-        "http" | "https" | "sockt5" => Ok(url),
+        "http" | "https" => Ok(url),
         _ => anyhow::bail!("Unsupported protocol: {}", protocol),
     }
 }
