@@ -331,7 +331,7 @@ async fn official_proxy(req: HttpRequest, body: Option<Json<Value>>) -> impl Res
     let builder = client()
         .request(
             req.method().clone(),
-            format!("{URL_PLATFORM_API}{}", req.uri()),
+            format!("{URL_PLATFORM_API}{}", req.uri().path()),
         )
         .headers(header_convert(req.headers()));
     let resp = match body {
@@ -360,7 +360,7 @@ async fn unofficial_proxy(req: HttpRequest, mut body: Option<Json<Value>>) -> im
     let builder = client()
         .request(
             req.method().clone(),
-            format!("{URL_CHATGPT_API}{}", req.uri()),
+            format!("{URL_CHATGPT_API}{}", req.uri().path()),
         )
         .headers(header_convert(req.headers()));
     let resp = match body {
