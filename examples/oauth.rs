@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .build();
     let token = auth
         .do_access_token(
-            OAuthAccountBuilder::default()
+            &OAuthAccountBuilder::default()
                 .username(email)
                 .password(password)
                 .build()?,
