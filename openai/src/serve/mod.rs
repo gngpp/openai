@@ -132,13 +132,10 @@ impl Launcher {
                 // unofficial public api endpoint
                 .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
                 // auth endpoint
-                .service(
-                    web::scope("/auth")
-                        .service(post_access_token)
-                        .service(post_refresh_token)
-                        .service(post_revoke_token)
-                        .service(get_arkose_token),
-                )
+                .service(post_access_token)
+                .service(post_refresh_token)
+                .service(post_revoke_token)
+                .service(get_arkose_token)
                 // static files endpoint
                 .service(
                     web::scope(EMPTY)
@@ -241,15 +238,15 @@ impl Launcher {
     }
 }
 
-#[post("/token")]
+#[post("/auth/token")]
 async fn post_access_token(account: web::Form<auth::OAuthAccount>) -> impl Responder {
-    match oauth_client().do_access_token(account.into_inner()).await {
+    match oauth_client().do_access_token(&account.into_inner()).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
 }
 
-#[post("/refresh_token")]
+#[post("/auth/refresh_token")]
 async fn post_refresh_token(req: HttpRequest) -> impl Responder {
     let refresh_token = req
         .headers()
@@ -261,7 +258,7 @@ async fn post_refresh_token(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[post("/revoke_token")]
+#[post("/auth/revoke_token")]
 async fn post_revoke_token(req: HttpRequest) -> impl Responder {
     let refresh_token = req
         .headers()
@@ -273,7 +270,7 @@ async fn post_revoke_token(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[get("/arkose_token")]
+#[get("/auth/arkose_token")]
 async fn get_arkose_token() -> impl Responder {
     match ArkoseToken::new("gpt4").await {
         Ok(arkose) => HttpResponse::Ok().json(arkose),
