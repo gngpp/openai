@@ -210,10 +210,7 @@ async fn post_login(
     let default_next = "/".to_owned();
     let next = query.get("next").unwrap_or(&default_next);
     let account = account.into_inner();
-    match super::oauth_client()
-        .do_access_token(&account)
-        .await
-    {
+    match super::oauth_client().do_access_token(&account).await {
         Ok(access_token) => HttpResponse::Found()
             .append_header((header::LOCATION, next.as_str()))
             .cookie(
