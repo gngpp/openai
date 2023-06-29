@@ -301,7 +301,7 @@ impl OAuthClient {
         Ok(access_token)
     }
 
-    pub async fn do_refresh_token(&mut self, refresh_token: &str) -> OAuthResult<RefreshToken> {
+    pub async fn do_refresh_token(&self, refresh_token: &str) -> OAuthResult<RefreshToken> {
         let refresh_token = Self::verify_refresh_token(refresh_token)?;
         let data = RefreshTokenDataBuilder::default()
             .redirect_uri(OPENAI_OAUTH_CALLBACK_URL)
@@ -322,7 +322,7 @@ impl OAuthClient {
         Ok(token)
     }
 
-    pub async fn do_revoke_token(&mut self, refresh_token: &str) -> OAuthResult<()> {
+    pub async fn do_revoke_token(&self, refresh_token: &str) -> OAuthResult<()> {
         let refresh_token = Self::verify_refresh_token(refresh_token)?;
         let data = RevokeTokenDataBuilder::default()
             .client_id(CLIENT_ID)
