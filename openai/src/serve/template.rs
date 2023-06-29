@@ -41,7 +41,15 @@ async fn static_service(
 
 // this function could be located in a different module
 pub fn config(cfg: &mut web::ServiceConfig) {
-    let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/*.html")).unwrap();
+    let mut tera = tera::Tera::default();
+    tera.add_raw_templates(vec![
+        ("404.html", include_str!("../../templates/404.html")),
+        ("auth.html",include_str!("../../templates/auth.html")),
+        ("login.html", include_str!("../../templates/login.html")),
+        ("chat.html", include_str!("../../templates/chat.html")),
+        ("detail.html", include_str!("../../templates/detail.html")),
+        ("share.html", include_str!("../../templates/share.html")),
+    ]).unwrap();
     cfg.app_data(web::Data::new(tera))
         .app_data(web::Data::new(generate()))
         .service(get_auth)
