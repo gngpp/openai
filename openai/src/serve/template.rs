@@ -6,7 +6,9 @@ use actix_web::{
     http::header,
     post, web, HttpRequest, HttpResponse, Responder,
 };
-use chrono::TimeZone;
+use chrono::prelude::{DateTime, Utc};
+use chrono::NaiveDateTime;
+
 use serde_json::json;
 
 use crate::auth;
@@ -50,25 +52,37 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         ("detail.html", include_str!("../../templates/detail.html")),
         ("share.html", include_str!("../../templates/share.html")),
     ])
-    .unwrap();
+    .expect("The static template failed to load");
     cfg.app_data(web::Data::new(tera))
         .app_data(web::Data::new(generate()))
         .service(get_auth)
         .service(get_login)
         .service(post_login)
         .service(get_logout)
-        .service(get_chat)
-        .service(get_chat_conversation)
-        .service(get_share_chat_conversation)
         .service(get_session)
         .service(get_account_check)
-        .service(e404)
+        .service(get_error_404)
+        .route("/", web::get().to(get_chat))
+        .route("/c", web::get().to(get_chat))
+        .service(web::resource("/c/{conversation_id}").route(web::get().to(get_chat)))
+        .service(get_share_chat_conversation)
+        .route(
+            &format!("/_next/data/{BUILD_ID}/index.json"),
+            web::get().to(get_chat_info),
+        )
+        .service(
+            web::resource(format!(
+                "/_next/data/{BUILD_ID}/c/{}",
+                "{filename:.+\\.(png|js|css|webp|json)}"
+            ))
+            .route(web::get().to(get_chat_info)),
+        )
         // static resource endpoints
         .service(
             web::resource("/{filename:.+\\.(png|js|css|webp|json)}")
                 .route(web::get().to(static_service)),
         )
-        .service(web::resource("/_next/{tail:.*}").route(web::to(static_service)))
+        .service(web::resource("/_next/static/{tail:.*}").route(web::to(static_service)))
         .service(web::resource("/fonts/{tail:.*}").route(web::to(static_service)))
         .service(web::resource("/ulp/{tail:.*}").route(web::to(static_service)))
         .service(web::resource("/sweetalert2/{tail:.*}").route(web::to(static_service)));
@@ -85,12 +99,23 @@ async fn get_auth(tmpl: web::Data<tera::Tera>) -> impl Responder {
         .body(tm)
 }
 
-#[get("/")]
-async fn get_chat(tmpl: web::Data<tera::Tera>, req: HttpRequest) -> impl Responder {
+async fn get_chat(
+    tmpl: web::Data<tera::Tera>,
+    req: HttpRequest,
+    conversation_id: Option<web::Path<String>>,
+    mut query: web::Query<HashMap<String, String>>,
+) -> impl Responder {
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
             Ok(token_profile) => match token_profile {
                 Some(profile) => {
+                    let (template, path) = match conversation_id {
+                        Some(conversation_id) => {
+                            query.insert("chatId".to_string(), conversation_id.into_inner());
+                            ("detail.html", "/c/[chatId]")
+                        }
+                        None => ("chat.html", "/"),
+                    };
                     let props = serde_json::json!({
                         "props": {
                             "pageProps": {
@@ -113,8 +138,8 @@ async fn get_chat(tmpl: web::Data<tera::Tera>, req: HttpRequest) -> impl Respond
                             },
                             "__N_SSP": true
                         },
-                        "page": "/",
-                        "query": req.query_string(),
+                        "page": path,
+                        "query": hashmap_to_query_string(query.into_inner()),
                         "buildId": BUILD_ID,
                         "isFallback": false,
                         "gssp": true,
@@ -122,8 +147,9 @@ async fn get_chat(tmpl: web::Data<tera::Tera>, req: HttpRequest) -> impl Respond
                     });
                     let mut ctx = tera::Context::new();
                     ctx.insert("props", &serde_json::to_string(&props).unwrap());
+
                     let tm = tmpl
-                        .render("chat.html", &ctx)
+                        .render(template, &ctx)
                         .map_err(|e| error::ErrorInternalServerError(e.to_string()))
                         .unwrap();
                     HttpResponse::Ok()
@@ -138,67 +164,49 @@ async fn get_chat(tmpl: web::Data<tera::Tera>, req: HttpRequest) -> impl Respond
     }
 }
 
-#[get("/c/{conversation_id}")]
-async fn get_chat_conversation(
-    tmpl: web::Data<tera::Tera>,
-    req: HttpRequest,
-    mut query: web::Query<HashMap<String, String>>,
-    conversation_id: web::Path<String>,
-) -> impl Responder {
+async fn get_chat_info(req: HttpRequest) -> impl Responder {
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
             Ok(token_profile) => match token_profile {
                 Some(profile) => {
-                    let conversation_id = conversation_id.into_inner();
-                    query.insert("chatId".to_string(), conversation_id.clone());
-                    let props = serde_json::json!({
-                        "props": {
-                            "pageProps": {
-                                "user": {
-                                    "id": profile.user_id(),
-                                    "name": profile.email(),
-                                    "email": profile.email(),
-                                    "image": "",
-                                    "picture": "",
-                                    "groups": [],
-                                },
-                                "serviceStatus": {},
-                                "userCountry": "US",
-                                "geoOk": true,
-                                "serviceAnnouncement": {
-                                    "paid": {},
-                                    "public": {}
-                                },
-                                "isUserInCanPayGroup": true
+                    let body = serde_json::json!({
+                        "pageProps": {
+                            "user": {
+                                "id": profile.user_id(),
+                                "name": profile.email(),
+                                "email": profile.email(),
+                                "image": "",
+                                "picture": "",
+                                "groups": [],
                             },
-                            "__N_SSP": true
+                            "serviceStatus": {},
+                            "userCountry": "US",
+                            "geoOk": true,
+                            "serviceAnnouncement": {
+                                "paid": {},
+                                "public": {}
+                            },
+                            "isUserInCanPayGroup": true
                         },
-                        "page": "/c/[chatId]",
-                        "query": hashmap_to_query_string(&query.into_inner()),
-                        "buildId": BUILD_ID,
-                        "isFallback": false,
-                        "gssp": true,
-                        "scriptLoader": []
+                        "__N_SSP": true
                     });
 
-                    let mut ctx = tera::Context::new();
-                    ctx.insert("props", &props.to_string());
-                    let tm = tmpl
-                        .render("detail.html", &ctx)
-                        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-                        .unwrap();
-                    HttpResponse::Ok()
-                        .content_type(header::ContentType::html())
-                        .body(tm)
+                    HttpResponse::Ok().json(body)
                 }
                 None => HttpResponse::InternalServerError().finish(),
             },
-            Err(_) => redirect_login(),
+            Err(_) => {
+                let body = serde_json::json!(
+                    {"pageProps": {"__N_REDIRECT": "/auth/login?", "__N_REDIRECT_STATUS": 307}, "__N_SSP": true}
+                );
+                HttpResponse::Ok().json(body)
+            }
         },
         None => redirect_login(),
     }
 }
 
+/// to be solved
 #[get("/share/{share_id}")]
 async fn get_share_chat_conversation(
     tmpl: web::Data<tera::Tera>,
@@ -206,46 +214,29 @@ async fn get_share_chat_conversation(
     mut query: web::Query<HashMap<String, String>>,
     share_id: web::Path<String>,
 ) -> impl Responder {
+    let share_id = share_id.into_inner();
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
             Ok(token_profile) => match token_profile {
-                Some(profile) => {
-                    let conversation_id = share_id.into_inner();
-                    query.insert("chatId".to_string(), conversation_id.clone());
+                Some(_profile) => {
+                    query.insert("chatId".to_string(), share_id);
                     let props = serde_json::json!({
                         "props": {
-                            "pageProps": {
-                                "user": {
-                                    "id": profile.user_id(),
-                                    "name": profile.email(),
-                                    "email": profile.email(),
-                                    "image": "",
-                                    "picture": "",
-                                    "groups": [],
-                                },
-                                "serviceStatus": {},
-                                "userCountry": "US",
-                                "geoOk": true,
-                                "serviceAnnouncement": {
-                                    "paid": {},
-                                    "public": {}
-                                },
-                                "isUserInCanPayGroup": true
-                            },
-                            "__N_SSP": true
+                            "pageProps": {"statusCode": 404}
                         },
-                        "page": "/c/[chatId]",
-                        "query": hashmap_to_query_string(&query.into_inner()),
+                        "page": "/_error",
+                        "query": {},
                         "buildId": BUILD_ID,
+                        "nextExport": true,
                         "isFallback": false,
-                        "gssp": true,
+                        "gip": true,
                         "scriptLoader": []
                     });
 
                     let mut ctx = tera::Context::new();
                     ctx.insert("props", &props.to_string());
                     let tm = tmpl
-                        .render("detail.html", &ctx)
+                        .render("share.html", &ctx)
                         .map_err(|e| error::ErrorInternalServerError(e.to_string()))
                         .unwrap();
                     HttpResponse::Ok()
@@ -254,7 +245,12 @@ async fn get_share_chat_conversation(
                 }
                 None => HttpResponse::InternalServerError().finish(),
             },
-            Err(_) => redirect_login(),
+            Err(_) => HttpResponse::Found()
+                .insert_header((
+                    header::LOCATION,
+                    format!("/login?next=%2Fshare%2F{share_id}"),
+                ))
+                .finish(),
         },
         None => redirect_login(),
     }
@@ -369,24 +365,34 @@ async fn get_session(req: HttpRequest) -> impl Responder {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
             Ok(token_profile) => match token_profile {
                 Some(profile) => {
-                    let time = chrono::Utc
-                        .timestamp_millis_opt(profile.expires_at())
-                        .unwrap();
-                    let props = serde_json::json!({
-                        "user": {
-                            "id": profile.user_id(),
-                            "name": profile.email(),
-                            "email": profile.email(),
-                            "image": None::<String>,
-                            "picture": None::<String>,
-                            "groups": [],
-                        },
-                        "expires" : time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        "accessToken": cookie.value(),
-                        "authProvider": "auth0"
-                    });
+                    match super::oauth_client()
+                        .do_dashboard_login(cookie.value())
+                        .await
+                    {
+                        Ok(session) => {
+                            let dt = DateTime::<Utc>::from_utc(
+                                NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
+                                Utc,
+                            );
 
-                    HttpResponse::Ok().json(props)
+                            let props = serde_json::json!({
+                                "user": {
+                                    "id": profile.user_id(),
+                                    "name": profile.email(),
+                                    "email": profile.email(),
+                                    "image": session.picture(),
+                                    "picture": session.picture(),
+                                    "groups": [],
+                                },
+                                "expires" : dt.naive_utc(),
+                                "accessToken": cookie.value(),
+                                "authProvider": "auth0"
+                            });
+
+                            HttpResponse::Ok().json(props)
+                        }
+                        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
+                    }
                 }
                 None => HttpResponse::InternalServerError().finish(),
             },
@@ -457,8 +463,8 @@ async fn get_account_check() -> impl Responder {
     HttpResponse::Ok().json(res)
 }
 
-#[get("/404")]
-async fn e404(tmpl: web::Data<tera::Tera>) -> impl Responder {
+#[get("/error/404")]
+async fn get_error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
     let mut ctx = tera::Context::new();
     let props = json!(
         {
@@ -490,14 +496,14 @@ fn redirect_login() -> HttpResponse {
         .finish()
 }
 
-fn hashmap_to_query_string(params: &std::collections::HashMap<String, String>) -> String {
+fn hashmap_to_query_string(params: std::collections::HashMap<String, String>) -> String {
     let mut query_string = String::new();
 
     for (key, value) in params {
         if !query_string.is_empty() {
             query_string.push('&');
         }
-        query_string.push_str(&format!("{}={}", url_encode(key), url_encode(value)));
+        query_string.push_str(&format!("{}={}", url_encode(&key), url_encode(&value)));
     }
 
     query_string
