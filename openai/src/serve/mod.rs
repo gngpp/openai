@@ -161,7 +161,6 @@ impl Launcher {
                 .service(post_refresh_token)
                 .service(post_revoke_token)
                 .service(get_arkose_token)
-                // static files endpoint
                 // templates data
                 .app_data(template_data.clone())
                 // templates page endpoint
