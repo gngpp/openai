@@ -40,7 +40,7 @@ enum SubCommands {
         #[clap(long, env = "OPENGPT_TIMEOUT", default_value = "600")]
         timeout: usize,
         /// Client connect timeout(secends)
-        #[clap(long, env = "OPENGPT_CONNECT_TIMEOUT", default_value = "60")]
+        #[clap(long, env = "OPENGPT_CONNECT_TIMEOUT", default_value = "10")]
         connect_timeout: usize,
         /// TCP keepalive (secends)
         #[clap(long, env = "OPENGPT_TCP_KEEPALIVE", default_value = "5")]

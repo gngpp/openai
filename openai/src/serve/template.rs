@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use actix_web::{
     cookie::{self, Cookie},
-    error, get,
+    error,
     http::header,
-    post, web, HttpRequest, HttpResponse, Responder,
+    post, web, HttpRequest, HttpResponse, Responder, Result,
 };
 use chrono::prelude::{DateTime, Utc};
 use chrono::NaiveDateTime;
@@ -35,7 +35,7 @@ pub(super) struct TemplateData {
     pub(crate) api_prefix: String,
 }
 
-async fn static_service(
+async fn get_static_resource(
     resource_map: web::Data<HashMap<&'static str, ::static_files::Resource>>,
     path: web::Path<String>,
 ) -> impl Responder {
@@ -61,16 +61,21 @@ pub fn config(cfg: &mut web::ServiceConfig) {
     .expect("The static template failed to load");
     cfg.app_data(web::Data::new(tera))
         .app_data(web::Data::new(generate()))
-        .service(get_auth)
-        .service(get_login)
-        .service(post_login)
-        .service(get_logout)
-        .service(get_session)
-        .service(get_account_check)
+        .route("/auth", web::get().to(get_auth))
+        .route("/login", web::get().to(get_login))
+        .route("/login", web::post().to(post_login))
+        .route("/auth/logout", web::get().to(get_logout))
+        .route("/auth/session", web::get().to(get_session))
+        .route(
+            "/auth/accounts/check/v4-2023-04-27",
+            web::get().to(get_account_check),
+        )
         .route("/", web::get().to(get_chat))
         .route("/c", web::get().to(get_chat))
         .route("/c/{conversation_id}", web::get().to(get_chat))
-        .service(get_share_chat_conversation)
+        .service(web::redirect("/chat", "/"))
+        .service(web::redirect("/chat/{conversation_id}", "/"))
+        .route("/share/{share_id}", web::get().to(get_share_chat))
         .route(
             &format!("/_next/data/{BUILD_ID}/index.json"),
             web::get().to(get_chat_info),
@@ -85,18 +90,17 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         // static resource endpoints
         .route(
             "/{filename:.+\\.(png|js|css|webp|json)}",
-            web::get().to(static_service),
+            web::get().to(get_static_resource),
         )
-        .route("/_next/static/{tail:.*}", web::to(static_service))
-        .route("/fonts/{tail:.*}", web::to(static_service))
-        .route("/ulp/{tail:.*}", web::to(static_service))
-        .route("/sweetalert2/{tail:.*}", web::to(static_service))
+        .route("/_next/static/{tail:.*}", web::to(get_static_resource))
+        .route("/fonts/{tail:.*}", web::to(get_static_resource))
+        .route("/ulp/{tail:.*}", web::to(get_static_resource))
+        .route("/sweetalert2/{tail:.*}", web::to(get_static_resource))
         // 404 endpoint
         .default_service(web::route().to(error_404));
 }
 
-#[get("/auth")]
-async fn get_auth(tmpl: web::Data<tera::Tera>) -> impl Responder {
+async fn get_auth(tmpl: web::Data<tera::Tera>) -> Result<HttpResponse> {
     render_template(tmpl, TEMP_SHARE, &tera::Context::new())
 }
 
@@ -105,72 +109,28 @@ async fn get_chat(
     req: HttpRequest,
     conversation_id: Option<web::Path<String>>,
     mut query: web::Query<HashMap<String, String>>,
-) -> impl Responder {
+) -> Result<HttpResponse> {
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => match token_profile {
-                Some(profile) => {
-                    let (template_name, path) = match conversation_id {
-                        Some(conversation_id) => {
-                            query.insert("chatId".to_string(), conversation_id.into_inner());
-                            (TEMP_DETAIL, "/c/[chatId]")
-                        }
-                        None => (TEMP_CHAT, "/"),
-                    };
-                    let props = serde_json::json!({
-                        "props": {
-                            "pageProps": {
-                                "user": {
-                                    "id": profile.user_id(),
-                                    "name": profile.email(),
-                                    "email": profile.email(),
-                                    "image": None::<String>,
-                                    "picture": None::<String>,
-                                    "groups": [],
-                                },
-                                "serviceStatus": {},
-                                "userCountry": "US",
-                                "geoOk": true,
-                                "serviceAnnouncement": {
-                                    "paid": {},
-                                    "public": {}
-                                },
-                                "isUserInCanPayGroup": true
-                            },
-                            "__N_SSP": true
-                        },
-                        "page": path,
-                        "query": query.into_inner(),
-                        "buildId": BUILD_ID,
-                        "isFallback": false,
-                        "gssp": true,
-                        "scriptLoader": []
-                    });
-                    let mut ctx = tera::Context::new();
-                    ctx.insert("props", &serde_json::to_string(&props).unwrap());
-                    render_template(tmpl, template_name, &ctx)
-                }
-                None => HttpResponse::InternalServerError().finish(),
-            },
-            Err(_) => redirect_login(),
-        },
-        None => redirect_login(),
-    }
-}
-
-async fn get_chat_info(req: HttpRequest) -> impl Responder {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => match token_profile {
-                Some(profile) => {
-                    let body = serde_json::json!({
+            Ok(token_profile) => {
+                let profile =
+                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Error"))?;
+                let (template_name, path) = match conversation_id {
+                    Some(conversation_id) => {
+                        query.insert("chatId".to_string(), conversation_id.into_inner());
+                        (TEMP_DETAIL, "/c/[chatId]")
+                    }
+                    None => (TEMP_CHAT, "/"),
+                };
+                let props = serde_json::json!({
+                    "props": {
                         "pageProps": {
                             "user": {
                                 "id": profile.user_id(),
                                 "name": profile.email(),
                                 "email": profile.email(),
-                                "image": "",
-                                "picture": "",
+                                "image": None::<String>,
+                                "picture": None::<String>,
                                 "groups": [],
                             },
                             "serviceStatus": {},
@@ -183,68 +143,108 @@ async fn get_chat_info(req: HttpRequest) -> impl Responder {
                             "isUserInCanPayGroup": true
                         },
                         "__N_SSP": true
-                    });
+                    },
+                    "page": path,
+                    "query": query.into_inner(),
+                    "buildId": BUILD_ID,
+                    "isFallback": false,
+                    "gssp": true,
+                    "scriptLoader": []
+                });
+                let mut ctx = tera::Context::new();
+                ctx.insert(
+                    "props",
+                    &serde_json::to_string(&props)
+                        .map_err(|e| error::ErrorInternalServerError(e.to_string()))?,
+                );
+                render_template(tmpl, template_name, &ctx)
+            }
+            Err(_) => redirect_login(),
+        },
+        None => redirect_login(),
+    }
+}
 
-                    HttpResponse::Ok().json(body)
-                }
-                None => HttpResponse::InternalServerError().finish(),
-            },
+async fn get_chat_info(req: HttpRequest) -> Result<HttpResponse> {
+    match req.cookie(SESSION_ID) {
+        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
+            Ok(token_profile) => {
+                let profile =
+                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+                let body = serde_json::json!({
+                    "pageProps": {
+                        "user": {
+                            "id": profile.user_id(),
+                            "name": profile.email(),
+                            "email": profile.email(),
+                            "image": "",
+                            "picture": "",
+                            "groups": [],
+                        },
+                        "serviceStatus": {},
+                        "userCountry": "US",
+                        "geoOk": true,
+                        "serviceAnnouncement": {
+                            "paid": {},
+                            "public": {}
+                        },
+                        "isUserInCanPayGroup": true
+                    },
+                    "__N_SSP": true
+                });
+
+                Ok(HttpResponse::Ok().json(body))
+            }
             Err(_) => {
                 let body = serde_json::json!(
                     {"pageProps": {"__N_REDIRECT": "/auth/login?", "__N_REDIRECT_STATUS": 307}, "__N_SSP": true}
                 );
-                HttpResponse::Ok().json(body)
+                Ok(HttpResponse::Ok().json(body))
             }
         },
         None => redirect_login(),
     }
 }
 
-/// to be solved
-#[get("/share/{share_id}")]
-async fn get_share_chat_conversation(
+async fn get_share_chat(
     tmpl: web::Data<tera::Tera>,
     req: HttpRequest,
     mut query: web::Query<HashMap<String, String>>,
     share_id: web::Path<String>,
-) -> impl Responder {
+) -> Result<HttpResponse> {
     let share_id = share_id.into_inner();
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => match token_profile {
-                Some(_profile) => {
-                    query.insert("chatId".to_string(), share_id);
-                    let props = serde_json::json!({
-                        "props": {
-                            "pageProps": {"statusCode": 404}
-                        },
-                        "page": "/_error",
-                        "query": {},
-                        "buildId": BUILD_ID,
-                        "nextExport": true,
-                        "isFallback": false,
-                        "gip": true,
-                        "scriptLoader": []
-                    });
+            Ok(_) => {
+                query.insert("chatId".to_string(), share_id);
+                let props = serde_json::json!({
+                    "props": {
+                        "pageProps": {"statusCode": 404}
+                    },
+                    "page": "/_error",
+                    "query": {},
+                    "buildId": BUILD_ID,
+                    "nextExport": true,
+                    "isFallback": false,
+                    "gip": true,
+                    "scriptLoader": []
+                });
 
-                    let mut ctx = tera::Context::new();
-                    ctx.insert("props", &props.to_string());
-                    render_template(tmpl, TEMP_SHARE, &ctx)
-                }
-                None => HttpResponse::InternalServerError().finish(),
-            },
-            Err(_) => HttpResponse::Found()
+                let mut ctx = tera::Context::new();
+                ctx.insert("props", &props.to_string());
+                render_template(tmpl, TEMP_SHARE, &ctx)
+            }
+            Err(_) => Ok(HttpResponse::Found()
                 .insert_header((
                     header::LOCATION,
                     format!("/login?next=%2Fshare%2F{share_id}"),
                 ))
-                .finish(),
+                .finish()),
         },
         None => redirect_login(),
     }
 }
 
-#[get("/login")]
 async fn get_login(
     tmpl: web::Data<tera::Tera>,
     query: web::Query<HashMap<String, String>>,
@@ -262,7 +262,6 @@ async fn get_login(
         .body(tm)
 }
 
-#[post("/login")]
 async fn post_login(
     tmpl: web::Data<tera::Tera>,
     query: web::Query<HashMap<String, String>>,
@@ -289,18 +288,20 @@ async fn post_login(
             ctx.insert("next", next.as_str());
             ctx.insert("username", account.username());
             ctx.insert("error", &e.to_string());
-            render_template(tmpl, TEMP_LOGIN, &ctx)
+            render_template(tmpl, TEMP_LOGIN, &ctx).unwrap()
         }
     }
 }
 
 #[post("/login/token")]
-async fn login_token(req: HttpRequest) -> impl Responder {
+async fn login_token(req: HttpRequest) -> Result<HttpResponse> {
     match req.headers().get(header::AUTHORIZATION) {
         Some(token) => {
             match crate::token::verify_access_token(token.to_str().unwrap_or_default()).await {
-                Ok(token_profile) => match token_profile {
-                    Some(profile) => HttpResponse::Found()
+                Ok(token_profile) => {
+                    let profile = token_profile
+                        .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+                    Ok(HttpResponse::Found()
                         .insert_header((header::LOCATION, "/"))
                         .cookie(
                             Cookie::build(SESSION_ID, token.to_str().unwrap())
@@ -311,17 +312,15 @@ async fn login_token(req: HttpRequest) -> impl Responder {
                                 .http_only(true)
                                 .finish(),
                         )
-                        .finish(),
-                    None => HttpResponse::InternalServerError().finish(),
-                },
-                Err(e) => HttpResponse::BadRequest().json(e.to_string()),
+                        .finish())
+                }
+                Err(e) => Ok(HttpResponse::BadRequest().json(e.to_string())),
             }
         }
         None => redirect_login(),
     }
 }
 
-#[get("/auth/logout")]
 async fn get_logout(req: HttpRequest) -> impl Responder {
     match req.cookie(SESSION_ID) {
         Some(cookie) => {
@@ -341,50 +340,45 @@ async fn get_logout(req: HttpRequest) -> impl Responder {
         .finish()
 }
 
-#[get("/api/auth/session")]
-async fn get_session(req: HttpRequest) -> impl Responder {
+async fn get_session(req: HttpRequest) -> Result<HttpResponse> {
     match req.cookie(SESSION_ID) {
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => match token_profile {
-                Some(profile) => {
-                    match super::oauth_client()
-                        .do_dashboard_login(cookie.value())
-                        .await
-                    {
-                        Ok(session) => {
-                            let dt = DateTime::<Utc>::from_utc(
-                                NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
-                                Utc,
-                            );
+            Ok(token_profile) => {
+                let profile =
+                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
 
-                            let props = serde_json::json!({
-                                "user": {
-                                    "id": profile.user_id(),
-                                    "name": profile.email(),
-                                    "email": profile.email(),
-                                    "image": session.picture(),
-                                    "picture": session.picture(),
-                                    "groups": [],
-                                },
-                                "expires" : dt.naive_utc(),
-                                "accessToken": cookie.value(),
-                                "authProvider": "auth0"
-                            });
+                let session = super::oauth_client()
+                    .do_dashboard_login(cookie.value())
+                    .await
+                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
 
-                            HttpResponse::Ok().json(props)
-                        }
-                        Err(e) => HttpResponse::InternalServerError().json(e.to_string()),
-                    }
-                }
-                None => HttpResponse::InternalServerError().finish(),
-            },
+                let dt = DateTime::<Utc>::from_utc(
+                    NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
+                    Utc,
+                );
+
+                let props = serde_json::json!({
+                    "user": {
+                        "id": profile.user_id(),
+                        "name": profile.email(),
+                        "email": profile.email(),
+                        "image": session.picture(),
+                        "picture": session.picture(),
+                        "groups": [],
+                    },
+                    "expires" : dt.naive_utc(),
+                    "accessToken": cookie.value(),
+                    "authProvider": "auth0"
+                });
+
+                Ok(HttpResponse::Ok().json(props))
+            }
             Err(_) => redirect_login(),
         },
         None => redirect_login(),
     }
 }
 
-#[get("/api/accounts/check/v4-2023-04-27")]
 async fn get_account_check() -> impl Responder {
     let res = serde_json::json!({
         "accounts": {
@@ -471,22 +465,21 @@ async fn error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
         .body(tm)
 }
 
-fn redirect_login() -> HttpResponse {
-    HttpResponse::Found()
+fn redirect_login() -> Result<HttpResponse> {
+    Ok(HttpResponse::Found()
         .insert_header((header::LOCATION, "/login"))
-        .finish()
+        .finish())
 }
 
 fn render_template(
     tmpl: web::Data<tera::Tera>,
     template_name: &str,
     context: &tera::Context,
-) -> HttpResponse {
+) -> Result<HttpResponse> {
     let tm = tmpl
         .render(template_name, context)
-        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-        .unwrap();
-    HttpResponse::Ok()
+        .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+    Ok(HttpResponse::Ok()
         .content_type(header::ContentType::html())
-        .body(tm)
+        .body(tm))
 }
