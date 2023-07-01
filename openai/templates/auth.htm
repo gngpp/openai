@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>ChatGPT Auth</title>
+    <link id="pagestyle" href="/corporate-ui-dashboard.css" rel="stylesheet">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <style data-id="immersive-translate-input-injected-css">
+        .immersive-translate-input {
+            position: absolute;
+            top: 0;
+            right: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 2147483647;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .immersive-translate-input-loading {
+            --loading-color: #f78fb6;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: block;
+            margin: 12px auto;
+            position: relative;
+            color: white;
+            left: -100px;
+            box-sizing: border-box;
+            animation: immersiveTranslateShadowRolling 1.5s linear infinite;
+        }
+
+        @keyframes immersiveTranslateShadowRolling {
+            0% {
+                box-shadow: 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);
+            }
+
+            12% {
+                box-shadow: 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);
+            }
+
+            25% {
+                box-shadow: 110px 0 var(--loading-color), 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);
+            }
+
+            36% {
+                box-shadow: 120px 0 var(--loading-color), 110px 0 var(--loading-color), 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0);
+            }
+
+            50% {
+                box-shadow: 130px 0 var(--loading-color), 120px 0 var(--loading-color), 110px 0 var(--loading-color), 100px 0 var(--loading-color);
+            }
+
+            62% {
+                box-shadow: 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color), 120px 0 var(--loading-color), 110px 0 var(--loading-color);
+            }
+
+            75% {
+                box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color), 120px 0 var(--loading-color);
+            }
+
+            87% {
+                box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color);
+            }
+
+            100% {
+                box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0);
+            }
+        }
+    </style>
+</head>
+
+<body class="">
+    <main class="main-content mt-0">
+        <section>
+            <div class="page-header min-vh-100">
+                <div class="container">
+                    <div class="row">
+                        <div class="col-xl-4 col-md-6 d-flex flex-column mx-auto">
+                            <div class="card card-plain mt-8">
+                                <div class="card-header pb-0 text-left bg-transparent">
+                                    <h3 class="font-weight-black text-dark display-6">欢迎</h3>
+                                    <p class="mb-0">
+                                        本服务可帮助 ChatGPT 被拒用户获取 Access Token。
+                                        <br>如果你没有ChatGPT账号，本服务对你无用。
+                                        <br>获取到的 Access Token 有效期为<b class="text-success">14</b>天。
+                                    </p>
+                                </div>
+                                <div class="card-body" id="stepTwo">
+                                    <form role="form" id="loginForm">
+                                        <label>邮箱</label>
+                                        <div class="mb-3">
+                                            <input type="username" name="username" id="txtUsername" class="form-control"
+                                                placeholder="Enter your email address">
+                                        </div>
+                                        <label>密码</label>
+                                        <div class="mb-3">
+                                            <input type="password" name="password" id="txtPassword" class="form-control"
+                                                placeholder="Enter password">
+                                        </div>
+                                        <label>MFA Code</label>
+                                        <div class="mb-3">
+                                            <input type="text" name="mfa_code" class="form-control"
+                                                placeholder="Enter MFA code (optional)">
+                                        </div>
+
+                                        <div class="text-center">
+                                            <button type="submit" id="btnGetAccessToken"
+                                                class="btn btn-dark w-100 mt-4 mb-3">获取 Access Token</button>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div id="stepThree" class="card-body" style="display: none">
+                                    <h4 class="mb-3 text-success">Access Token</h4>
+                                    <textarea class="form-control clipboard" id="accessToken" rows="8"
+                                        data-clipboard-target="#accessToken" readonly=""></textarea>
+                                    <span class="text-xs text-mute copy-result">点击文本框即可复制</span>
+                                    <h5 class="mb-3 mt-3">完整数据</h5>
+                                    <pre id="fullData"></pre>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="position-absolute w-40 top-0 end-0 h-100 d-md-block d-none">
+                                <div class="oblique-image position-absolute fixed-top ms-auto h-100 z-index-0 bg-cover ms-n8"
+                                    style="background-image: url(&#39;/dall-e.webp&#39;);">
+                                    <div
+                                        class="blur mt-12 p-4 text-center border border-white border-radius-md position-absolute fixed-bottom m-4">
+                                        <h2 class="mt-3 text-dark font-weight-bold">OpenAI, not CloseAI.</h2>
+                                        <h6 class="text-dark text-sm mt-4">Core by Gngpp</h6>
+                                        <h7 class="text-dark text-sm mt-4">由于一些你懂的原因，特申明：这是个人服务，非OpenAI的官方服务！</h7>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/jquery.min.js"></script>
+    <script src="/clipboard.min.js"></script>
+
+    <script>
+        !function ($) {
+            $(function () {
+                let clipboard = new ClipboardJS(".clipboard");
+                clipboard.on("success", (e) => {
+                    e.clearSelection();
+                    $(".copy-result").removeClass('text-danger').addClass('text-success').text("复制成功！");
+                });
+                clipboard.on("error", (e) => {
+                    $(".copy-result").removeClass('text-success').addClass('text-danger').text("复制失败。");
+                });
+
+                let txtUsername = $("#txtUsername");
+                let $txtPassword = $("#txtPassword");
+                let $btnGetAccessToken = $("#btnGetAccessToken");
+
+                txtUsername.focus();
+
+                $btnGetAccessToken.click(function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    if ("" === txtUsername.val()) {
+                        alert("邮箱不能为空！");
+                        txtUsername.focus();
+                        return false;
+                    }
+
+                    if ("" === $txtPassword.val()) {
+                        alert("密码不能为空！");
+                        $txtPassword.focus();
+                        return false;
+                    }
+
+                    $btnGetAccessToken.addClass('disabled').text("正在获取 Access Token...");
+
+
+                    $.ajax({
+                        url: '/auth/token',
+                        method: "POST",
+                        data: $("#loginForm").serialize(),
+                        success: (data) => {
+                            $("#accessToken").text(data.access_token);
+                            $("#fullData").text(JSON.stringify(data, null, 2));
+                            $("#stepTwo").slideUp();
+                            $("#stepThree").slideDown();
+                        },
+                        error: (err) => {
+                            alert(`获取失败: ${err.responseJSON}`);
+                            $txtPassword.focus();
+                            window.turnstile && turnstile.reset('#widgetTurnstile');
+                            $btnGetAccessToken.text("获取 Access Token").removeClass('disabled');
+                        },
+                    });
+
+                    return false;
+                });
+            });
+        }(jQuery);
+    </script>
+
+
+</body>
+
+</html>

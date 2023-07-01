@@ -15,10 +15,10 @@ use crate::auth;
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 const SESSION_ID: &str = "opengpt_session";
-const BUILD_ID: &str = "cx416mT2Lb0ZTj5FxFg1l";
-const TEMP_404: &str = "404.html";
-const TEMP_AUTH: &str = "auth.html";
-const TEMP_CHAT: &str = "chat.html";
+const BUILD_ID: &str = "WLHd8p-1ysAW_5sZZPJIy";
+const TEMP_404: &str = "404.htm";
+const TEMP_AUTH: &str = "auth.htm";
+const TEMP_CHAT: &str = "chat.htm";
 const TEMP_DETAIL: &str = "detail.html";
 const TEMP_LOGIN: &str = "login.html";
 const TEMP_SHARE: &str = "share.html";
@@ -51,11 +51,11 @@ async fn get_static_resource(
 pub fn config(cfg: &mut web::ServiceConfig) {
     let mut tera = tera::Tera::default();
     tera.add_raw_templates(vec![
-        (TEMP_404, include_str!("../../templates/404.html")),
-        (TEMP_AUTH, include_str!("../../templates/auth.html")),
+        (TEMP_404, include_str!("../../templates/404.htm")),
+        (TEMP_AUTH, include_str!("../../templates/auth.htm")),
         (TEMP_LOGIN, include_str!("../../templates/login.html")),
-        (TEMP_CHAT, include_str!("../../templates/chat.html")),
-        (TEMP_DETAIL, include_str!("../../templates/detail.html")),
+        (TEMP_CHAT, include_str!("../../templates/chat.htm")),
+        (TEMP_DETAIL, include_str!("../../templates/detail.htm")),
         (TEMP_SHARE, include_str!("../../templates/share.html")),
     ])
     .expect("The static template failed to load");
@@ -65,7 +65,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .route("/login", web::get().to(get_login))
         .route("/login", web::post().to(post_login))
         .route("/auth/logout", web::get().to(get_logout))
-        .route("/auth/session", web::get().to(get_session))
+        .route("/api/auth/session", web::get().to(get_session))
         .route(
             "/auth/accounts/check/v4-2023-04-27",
             web::get().to(get_account_check),
@@ -102,6 +102,194 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 
 async fn get_auth(tmpl: web::Data<tera::Tera>) -> Result<HttpResponse> {
     render_template(tmpl, TEMP_SHARE, &tera::Context::new())
+}
+
+async fn get_login(
+    tmpl: web::Data<tera::Tera>,
+    query: web::Query<HashMap<String, String>>,
+) -> Result<HttpResponse> {
+    let mut ctx = tera::Context::new();
+    ctx.insert("next", query.get("next").unwrap_or(&"".to_owned()));
+    ctx.insert("error", "");
+    ctx.insert("username", "");
+    render_template(tmpl, TEMP_LOGIN, &ctx)
+}
+
+async fn post_login(
+    tmpl: web::Data<tera::Tera>,
+    query: web::Query<HashMap<String, String>>,
+    account: web::Form<auth::OAuthAccount>,
+) -> impl Responder {
+    let default_next = "/".to_owned();
+    let next = query.get("next").unwrap_or(&default_next);
+    let account = account.into_inner();
+    match super::oauth_client().do_access_token(&account).await {
+        Ok(access_token) => HttpResponse::SeeOther()
+            .append_header((header::LOCATION, next.as_str()))
+            .cookie(
+                Cookie::build(SESSION_ID, access_token.access_token)
+                    .path("/")
+                    .max_age(cookie::time::Duration::seconds(access_token.expires_in))
+                    .same_site(cookie::SameSite::Lax)
+                    .secure(false)
+                    .http_only(true)
+                    .finish(),
+            )
+            .finish(),
+        Err(e) => {
+            let mut ctx = tera::Context::new();
+            ctx.insert("next", next.as_str());
+            ctx.insert("username", account.username());
+            ctx.insert("error", &e.to_string());
+            render_template(tmpl, TEMP_LOGIN, &ctx).unwrap()
+        }
+    }
+}
+
+#[post("/login/token")]
+async fn login_token(req: HttpRequest) -> Result<HttpResponse> {
+    match req.headers().get(header::AUTHORIZATION) {
+        Some(token) => {
+            match crate::token::verify_access_token(token.to_str().unwrap_or_default()).await {
+                Ok(token_profile) => {
+                    let profile = token_profile
+                        .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+                    Ok(HttpResponse::SeeOther()
+                        .insert_header((header::LOCATION, "/"))
+                        .cookie(
+                            Cookie::build(SESSION_ID, token.to_str().unwrap())
+                                .path("/")
+                                .max_age(cookie::time::Duration::seconds(profile.expires()))
+                                .same_site(cookie::SameSite::Lax)
+                                .secure(false)
+                                .http_only(true)
+                                .finish(),
+                        )
+                        .finish())
+                }
+                Err(e) => Ok(HttpResponse::BadRequest().json(e.to_string())),
+            }
+        }
+        None => redirect_login(),
+    }
+}
+
+async fn get_logout(req: HttpRequest) -> impl Responder {
+    match req.cookie(SESSION_ID) {
+        Some(cookie) => {
+            let _ = super::oauth_client().do_revoke_token(cookie.value()).await;
+        }
+        None => {}
+    }
+    HttpResponse::SeeOther()
+        .cookie(
+            Cookie::build(SESSION_ID, "")
+                .path("/")
+                .secure(false)
+                .http_only(true)
+                .finish(),
+        )
+        .insert_header((header::LOCATION, "/login"))
+        .finish()
+}
+
+async fn get_session(req: HttpRequest) -> Result<HttpResponse> {
+    match req.cookie(SESSION_ID) {
+        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
+            Ok(token_profile) => {
+                let profile =
+                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+
+                let session = super::oauth_client()
+                    .do_dashboard_login(cookie.value())
+                    .await
+                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+
+                let dt = DateTime::<Utc>::from_utc(
+                    NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
+                    Utc,
+                );
+
+                let props = serde_json::json!({
+                    "user": {
+                        "id": profile.user_id(),
+                        "name": profile.email(),
+                        "email": profile.email(),
+                        "image": session.picture(),
+                        "picture": session.picture(),
+                        "groups": [],
+                    },
+                    "expires" : dt.naive_utc(),
+                    "accessToken": cookie.value(),
+                    "authProvider": "auth0"
+                });
+
+                Ok(HttpResponse::Ok().json(props))
+            }
+            Err(_) => redirect_login(),
+        },
+        None => redirect_login(),
+    }
+}
+
+async fn get_account_check() -> impl Responder {
+    let res = serde_json::json!({
+        "accounts": {
+            "default": {
+                "account": {
+                    "account_user_role": "account-owner",
+                    "account_user_id": "d0322341-7ace-4484-b3f7-89b03e82b927",
+                    "processor": {
+                        "a001": {
+                            "has_customer_object": true
+                        },
+                        "b001": {
+                            "has_transaction_history": true
+                        }
+                    },
+                    "account_id": "a323bd05-db25-4e8f-9173-2f0c228cc8fa",
+                    "is_most_recent_expired_subscription_gratis": true,
+                    "has_previously_paid_subscription": true
+                },
+                "features": [
+                    "model_switcher",
+                    "model_preview",
+                    "system_message",
+                    "data_controls_enabled",
+                    "data_export_enabled",
+                    "show_existing_user_age_confirmation_modal",
+                    "bucketed_history",
+                    "priority_driven_models_list",
+                    "message_style_202305",
+                    "layout_may_2023",
+                    "plugins_available",
+                    "beta_features",
+                    "infinite_scroll_history",
+                    "browsing_available",
+                    "browsing_inner_monologue",
+                    "browsing_bing_branding",
+                    "shareable_links",
+                    "plugin_display_params",
+                    "tools3_dev",
+                    "tools2",
+                    "debug",
+                ],
+                "entitlement": {
+                    "subscription_id": "d0dcb1fc-56aa-4cd9-90ef-37f1e03576d3",
+                    "has_active_subscription": true,
+                    "subscription_plan": "chatgptplusplan",
+                    "expires_at": "2089-08-08T23:59:59+00:00"
+                },
+                "last_active_subscription": {
+                    "subscription_id": "d0dcb1fc-56aa-4cd9-90ef-37f1e03576d3",
+                    "purchase_origin_platform": "chatgpt_mobile_ios",
+                    "will_renew": true
+                }
+            }
+        },
+        "temp_ap_available_at": "2023-05-20T17:30:00+00:00"
+    });
+    HttpResponse::Ok().json(res)
 }
 
 async fn get_chat(
@@ -245,201 +433,7 @@ async fn get_share_chat(
     }
 }
 
-async fn get_login(
-    tmpl: web::Data<tera::Tera>,
-    query: web::Query<HashMap<String, String>>,
-) -> impl Responder {
-    let mut ctx = tera::Context::new();
-    ctx.insert("next", query.get("next").unwrap_or(&"".to_owned()));
-    ctx.insert("error", "");
-    ctx.insert("username", "");
-    let tm = tmpl
-        .render("login.html", &ctx)
-        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-        .unwrap();
-    HttpResponse::Ok()
-        .content_type(header::ContentType::html())
-        .body(tm)
-}
-
-async fn post_login(
-    tmpl: web::Data<tera::Tera>,
-    query: web::Query<HashMap<String, String>>,
-    account: web::Form<auth::OAuthAccount>,
-) -> impl Responder {
-    let default_next = "/".to_owned();
-    let next = query.get("next").unwrap_or(&default_next);
-    let account = account.into_inner();
-    match super::oauth_client().do_access_token(&account).await {
-        Ok(access_token) => HttpResponse::Found()
-            .append_header((header::LOCATION, next.as_str()))
-            .cookie(
-                Cookie::build(SESSION_ID, access_token.access_token)
-                    .path("/")
-                    .max_age(cookie::time::Duration::seconds(access_token.expires_in))
-                    .same_site(cookie::SameSite::Lax)
-                    .secure(false)
-                    .http_only(true)
-                    .finish(),
-            )
-            .finish(),
-        Err(e) => {
-            let mut ctx = tera::Context::new();
-            ctx.insert("next", next.as_str());
-            ctx.insert("username", account.username());
-            ctx.insert("error", &e.to_string());
-            render_template(tmpl, TEMP_LOGIN, &ctx).unwrap()
-        }
-    }
-}
-
-#[post("/login/token")]
-async fn login_token(req: HttpRequest) -> Result<HttpResponse> {
-    match req.headers().get(header::AUTHORIZATION) {
-        Some(token) => {
-            match crate::token::verify_access_token(token.to_str().unwrap_or_default()).await {
-                Ok(token_profile) => {
-                    let profile = token_profile
-                        .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
-                    Ok(HttpResponse::Found()
-                        .insert_header((header::LOCATION, "/"))
-                        .cookie(
-                            Cookie::build(SESSION_ID, token.to_str().unwrap())
-                                .path("/")
-                                .max_age(cookie::time::Duration::seconds(profile.expires()))
-                                .same_site(cookie::SameSite::Lax)
-                                .secure(false)
-                                .http_only(true)
-                                .finish(),
-                        )
-                        .finish())
-                }
-                Err(e) => Ok(HttpResponse::BadRequest().json(e.to_string())),
-            }
-        }
-        None => redirect_login(),
-    }
-}
-
-async fn get_logout(req: HttpRequest) -> impl Responder {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => {
-            let _ = super::oauth_client().do_revoke_token(cookie.value()).await;
-        }
-        None => {}
-    }
-    HttpResponse::Found()
-        .cookie(
-            Cookie::build(SESSION_ID, "")
-                .path("/")
-                .secure(false)
-                .http_only(true)
-                .finish(),
-        )
-        .insert_header((header::LOCATION, "/login"))
-        .finish()
-}
-
-async fn get_session(req: HttpRequest) -> Result<HttpResponse> {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => {
-                let profile =
-                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
-
-                let session = super::oauth_client()
-                    .do_dashboard_login(cookie.value())
-                    .await
-                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
-
-                let dt = DateTime::<Utc>::from_utc(
-                    NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
-                    Utc,
-                );
-
-                let props = serde_json::json!({
-                    "user": {
-                        "id": profile.user_id(),
-                        "name": profile.email(),
-                        "email": profile.email(),
-                        "image": session.picture(),
-                        "picture": session.picture(),
-                        "groups": [],
-                    },
-                    "expires" : dt.naive_utc(),
-                    "accessToken": cookie.value(),
-                    "authProvider": "auth0"
-                });
-
-                Ok(HttpResponse::Ok().json(props))
-            }
-            Err(_) => redirect_login(),
-        },
-        None => redirect_login(),
-    }
-}
-
-async fn get_account_check() -> impl Responder {
-    let res = serde_json::json!({
-        "accounts": {
-            "default": {
-                "account": {
-                    "account_user_role": "account-owner",
-                    "account_user_id": "d0322341-7ace-4484-b3f7-89b03e82b927",
-                    "processor": {
-                        "a001": {
-                            "has_customer_object": true
-                        },
-                        "b001": {
-                            "has_transaction_history": true
-                        }
-                    },
-                    "account_id": "a323bd05-db25-4e8f-9173-2f0c228cc8fa",
-                    "is_most_recent_expired_subscription_gratis": true,
-                    "has_previously_paid_subscription": true
-                },
-                "features": [
-                    "model_switcher",
-                    "model_preview",
-                    "system_message",
-                    "data_controls_enabled",
-                    "data_export_enabled",
-                    "show_existing_user_age_confirmation_modal",
-                    "bucketed_history",
-                    "priority_driven_models_list",
-                    "message_style_202305",
-                    "layout_may_2023",
-                    "plugins_available",
-                    "beta_features",
-                    "infinite_scroll_history",
-                    "browsing_available",
-                    "browsing_inner_monologue",
-                    "browsing_bing_branding",
-                    "shareable_links",
-                    "plugin_display_params",
-                    "tools3_dev",
-                    "tools2",
-                    "debug",
-                ],
-                "entitlement": {
-                    "subscription_id": "d0dcb1fc-56aa-4cd9-90ef-37f1e03576d3",
-                    "has_active_subscription": true,
-                    "subscription_plan": "chatgptplusplan",
-                    "expires_at": "2089-08-08T23:59:59+00:00"
-                },
-                "last_active_subscription": {
-                    "subscription_id": "d0dcb1fc-56aa-4cd9-90ef-37f1e03576d3",
-                    "purchase_origin_platform": "chatgpt_mobile_ios",
-                    "will_renew": true
-                }
-            }
-        },
-        "temp_ap_available_at": "2023-05-20T17:30:00+00:00"
-    });
-    HttpResponse::Ok().json(res)
-}
-
-async fn error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
+async fn error_404(tmpl: web::Data<tera::Tera>) -> Result<HttpResponse> {
     let mut ctx = tera::Context::new();
     let props = json!(
         {
@@ -455,14 +449,12 @@ async fn error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
             "scriptLoader": []
         }
     );
-    ctx.insert("props", &props);
-    let tm = tmpl
-        .render(TEMP_404, &ctx)
-        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-        .unwrap();
-    HttpResponse::Ok()
-        .content_type(header::ContentType::html())
-        .body(tm)
+    ctx.insert(
+        "props",
+        &serde_json::to_string(&props)
+            .map_err(|e| error::ErrorInternalServerError(e.to_string()))?,
+    );
+    render_template(tmpl, TEMP_404, &ctx)
 }
 
 fn redirect_login() -> Result<HttpResponse> {
