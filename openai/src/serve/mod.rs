@@ -162,13 +162,10 @@ impl Launcher {
                 .service(post_revoke_token)
                 .service(get_arkose_token)
                 // static files endpoint
-                .service(
-                    web::scope(EMPTY)
-                        // templates data
-                        .app_data(template_data.clone())
-                        // templates page endpoint
-                        .configure(template::config),
-                );
+                // templates data
+                .app_data(template_data.clone())
+                // templates page endpoint
+                .configure(template::config);
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
             {

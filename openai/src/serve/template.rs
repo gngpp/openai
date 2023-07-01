@@ -16,6 +16,12 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 const SESSION_ID: &str = "opengpt_session";
 const BUILD_ID: &str = "cx416mT2Lb0ZTj5FxFg1l";
+const TEMP_404: &str = "404.html";
+const TEMP_AUTH: &str = "auth.html";
+const TEMP_CHAT: &str = "chat.html";
+const TEMP_DETAIL: &str = "detail.html";
+const TEMP_LOGIN: &str = "login.html";
+const TEMP_SHARE: &str = "share.html";
 
 #[allow(dead_code)]
 struct Session<'a> {
@@ -45,12 +51,12 @@ async fn static_service(
 pub fn config(cfg: &mut web::ServiceConfig) {
     let mut tera = tera::Tera::default();
     tera.add_raw_templates(vec![
-        ("404.html", include_str!("../../templates/404.html")),
-        ("auth.html", include_str!("../../templates/auth.html")),
-        ("login.html", include_str!("../../templates/login.html")),
-        ("chat.html", include_str!("../../templates/chat.html")),
-        ("detail.html", include_str!("../../templates/detail.html")),
-        ("share.html", include_str!("../../templates/share.html")),
+        (TEMP_404, include_str!("../../templates/404.html")),
+        (TEMP_AUTH, include_str!("../../templates/auth.html")),
+        (TEMP_LOGIN, include_str!("../../templates/login.html")),
+        (TEMP_CHAT, include_str!("../../templates/chat.html")),
+        (TEMP_DETAIL, include_str!("../../templates/detail.html")),
+        (TEMP_SHARE, include_str!("../../templates/share.html")),
     ])
     .expect("The static template failed to load");
     cfg.app_data(web::Data::new(tera))
@@ -61,42 +67,37 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(get_logout)
         .service(get_session)
         .service(get_account_check)
-        .service(get_error_404)
         .route("/", web::get().to(get_chat))
         .route("/c", web::get().to(get_chat))
-        .service(web::resource("/c/{conversation_id}").route(web::get().to(get_chat)))
+        .route("/c/{conversation_id}", web::get().to(get_chat))
         .service(get_share_chat_conversation)
         .route(
             &format!("/_next/data/{BUILD_ID}/index.json"),
             web::get().to(get_chat_info),
         )
-        .service(
-            web::resource(format!(
+        .route(
+            &format!(
                 "/_next/data/{BUILD_ID}/c/{}",
                 "{filename:.+\\.(png|js|css|webp|json)}"
-            ))
-            .route(web::get().to(get_chat_info)),
+            ),
+            web::get().to(get_chat_info),
         )
         // static resource endpoints
-        .service(
-            web::resource("/{filename:.+\\.(png|js|css|webp|json)}")
-                .route(web::get().to(static_service)),
+        .route(
+            "/{filename:.+\\.(png|js|css|webp|json)}",
+            web::get().to(static_service),
         )
-        .service(web::resource("/_next/static/{tail:.*}").route(web::to(static_service)))
-        .service(web::resource("/fonts/{tail:.*}").route(web::to(static_service)))
-        .service(web::resource("/ulp/{tail:.*}").route(web::to(static_service)))
-        .service(web::resource("/sweetalert2/{tail:.*}").route(web::to(static_service)));
+        .route("/_next/static/{tail:.*}", web::to(static_service))
+        .route("/fonts/{tail:.*}", web::to(static_service))
+        .route("/ulp/{tail:.*}", web::to(static_service))
+        .route("/sweetalert2/{tail:.*}", web::to(static_service))
+        // 404 endpoint
+        .default_service(web::route().to(error_404));
 }
 
 #[get("/auth")]
 async fn get_auth(tmpl: web::Data<tera::Tera>) -> impl Responder {
-    let tm = tmpl
-        .render("auth.html", &tera::Context::new())
-        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-        .unwrap();
-    HttpResponse::Ok()
-        .content_type(header::ContentType::html())
-        .body(tm)
+    render_template(tmpl, TEMP_SHARE, &tera::Context::new())
 }
 
 async fn get_chat(
@@ -109,12 +110,12 @@ async fn get_chat(
         Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
             Ok(token_profile) => match token_profile {
                 Some(profile) => {
-                    let (template, path) = match conversation_id {
+                    let (template_name, path) = match conversation_id {
                         Some(conversation_id) => {
                             query.insert("chatId".to_string(), conversation_id.into_inner());
-                            ("detail.html", "/c/[chatId]")
+                            (TEMP_DETAIL, "/c/[chatId]")
                         }
-                        None => ("chat.html", "/"),
+                        None => (TEMP_CHAT, "/"),
                     };
                     let props = serde_json::json!({
                         "props": {
@@ -139,7 +140,7 @@ async fn get_chat(
                             "__N_SSP": true
                         },
                         "page": path,
-                        "query": hashmap_to_query_string(query.into_inner()),
+                        "query": query.into_inner(),
                         "buildId": BUILD_ID,
                         "isFallback": false,
                         "gssp": true,
@@ -147,14 +148,7 @@ async fn get_chat(
                     });
                     let mut ctx = tera::Context::new();
                     ctx.insert("props", &serde_json::to_string(&props).unwrap());
-
-                    let tm = tmpl
-                        .render(template, &ctx)
-                        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-                        .unwrap();
-                    HttpResponse::Ok()
-                        .content_type(header::ContentType::html())
-                        .body(tm)
+                    render_template(tmpl, template_name, &ctx)
                 }
                 None => HttpResponse::InternalServerError().finish(),
             },
@@ -235,13 +229,7 @@ async fn get_share_chat_conversation(
 
                     let mut ctx = tera::Context::new();
                     ctx.insert("props", &props.to_string());
-                    let tm = tmpl
-                        .render("share.html", &ctx)
-                        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-                        .unwrap();
-                    HttpResponse::Ok()
-                        .content_type(header::ContentType::html())
-                        .body(tm)
+                    render_template(tmpl, TEMP_SHARE, &ctx)
                 }
                 None => HttpResponse::InternalServerError().finish(),
             },
@@ -300,14 +288,8 @@ async fn post_login(
             let mut ctx = tera::Context::new();
             ctx.insert("next", next.as_str());
             ctx.insert("username", account.username());
-            let tm = tmpl
-                .render("login.html", &ctx)
-                .map_err(|e| error::ErrorInternalServerError(e.to_string()))
-                .unwrap();
             ctx.insert("error", &e.to_string());
-            HttpResponse::Ok()
-                .content_type(header::ContentType::html())
-                .body(tm)
+            render_template(tmpl, TEMP_LOGIN, &ctx)
         }
     }
 }
@@ -463,8 +445,7 @@ async fn get_account_check() -> impl Responder {
     HttpResponse::Ok().json(res)
 }
 
-#[get("/error/404")]
-async fn get_error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
+async fn error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
     let mut ctx = tera::Context::new();
     let props = json!(
         {
@@ -482,7 +463,7 @@ async fn get_error_404(tmpl: web::Data<tera::Tera>) -> impl Responder {
     );
     ctx.insert("props", &props);
     let tm = tmpl
-        .render("404.html", &ctx)
+        .render(TEMP_404, &ctx)
         .map_err(|e| error::ErrorInternalServerError(e.to_string()))
         .unwrap();
     HttpResponse::Ok()
@@ -496,44 +477,16 @@ fn redirect_login() -> HttpResponse {
         .finish()
 }
 
-fn hashmap_to_query_string(params: std::collections::HashMap<String, String>) -> String {
-    let mut query_string = String::new();
-
-    for (key, value) in params {
-        if !query_string.is_empty() {
-            query_string.push('&');
-        }
-        query_string.push_str(&format!("{}={}", url_encode(&key), url_encode(&value)));
-    }
-
-    query_string
-}
-
-fn url_encode(input: &str) -> String {
-    let mut encoded = String::new();
-
-    for ch in input.chars() {
-        match ch {
-            'A'..='Z'
-            | 'a'..='z'
-            | '0'..='9'
-            | '-'
-            | '_'
-            | '.'
-            | '!'
-            | '~'
-            | '*'
-            | '\''
-            | '('
-            | ')' => {
-                encoded.push(ch);
-            }
-            _ => {
-                encoded.push('%');
-                encoded.push_str(&ch.encode_utf8(&mut [0; 4]).to_string());
-            }
-        }
-    }
-
-    encoded
+fn render_template(
+    tmpl: web::Data<tera::Tera>,
+    template_name: &str,
+    context: &tera::Context,
+) -> HttpResponse {
+    let tm = tmpl
+        .render(template_name, context)
+        .map_err(|e| error::ErrorInternalServerError(e.to_string()))
+        .unwrap();
+    HttpResponse::Ok()
+        .content_type(header::ContentType::html())
+        .body(tm)
 }
