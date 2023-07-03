@@ -35,12 +35,12 @@ const OPENAI_API_URL: &str = "https://api.openai.com";
 ///
 /// [`Rc`]: std::rc::Rc
 #[derive(Clone)]
-pub struct OAuthClient {
+pub struct AuthClient {
     client: Client,
     email_regex: Regex,
 }
 
-impl OAuthClient {
+impl AuthClient {
     pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<Session> {
         let resp = self
             .client
@@ -594,9 +594,9 @@ impl OAuthAccount {
     }
 }
 
-pub struct OAuthClientBuilder {
+pub struct AuthClientBuilder {
     builder: reqwest::ClientBuilder,
-    oauth: OAuthClient,
+    oauth: AuthClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -697,7 +697,7 @@ pub struct Key {
     pub publishable: bool,
 }
 
-impl OAuthClientBuilder {
+impl AuthClientBuilder {
     // Proxy options
     pub fn proxy(mut self, proxy: Option<Proxy>) -> Self {
         if let Some(proxy) = proxy {
@@ -793,12 +793,12 @@ impl OAuthClientBuilder {
         self
     }
 
-    pub fn build(mut self) -> OAuthClient {
+    pub fn build(mut self) -> AuthClient {
         self.oauth.client = self.builder.build().expect("ClientBuilder::build()");
         self.oauth
     }
 
-    pub fn builder() -> OAuthClientBuilder {
+    pub fn builder() -> AuthClientBuilder {
         let client_builder = Client::builder().redirect(Policy::custom(|attempt| {
             if attempt
                 .url()
@@ -812,9 +812,9 @@ impl OAuthClientBuilder {
             }
         }));
 
-        OAuthClientBuilder {
+        AuthClientBuilder {
             builder: client_builder,
-            oauth: OAuthClient {
+            oauth: AuthClient {
                 client: Client::new(),
                 email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b")
                     .expect("Regex::new()"),

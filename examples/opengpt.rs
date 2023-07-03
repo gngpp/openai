@@ -11,7 +11,7 @@ use tokio::io::AsyncWriteExt;
 async fn main() -> anyhow::Result<()> {
     let email = std::env::var("EMAIL")?;
     let password = std::env::var("PASSWORD")?;
-    let auth = openai::auth::OAuthClientBuilder::builder()
+    let auth = openai::auth::AuthClientBuilder::builder()
         .user_agent(openai::HEADER_UA)
         .chrome_builder(reqwest::browser::ChromeVersion::V108)
         .cookie_store(true)
