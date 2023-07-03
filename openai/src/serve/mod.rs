@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 
 use crate::arkose::ArkoseToken;
-use crate::auth::OAuthClient;
+use crate::auth::AuthClient;
 use crate::serve::template::TemplateData;
 use crate::serve::tokenbucket::TokenBucketContext;
 use crate::{auth, info};
@@ -37,7 +37,7 @@ use crate::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
 const EMPTY: &str = "";
 static INIT: Once = Once::new();
 static mut CLIENT: Option<Client> = None;
-static mut OAUTH_CLIENT: Option<OAuthClient> = None;
+static mut AUTH_CLIENT: Option<AuthClient> = None;
 
 pub(super) fn client() -> Client {
     if let Some(client) = unsafe { &CLIENT } {
@@ -46,8 +46,8 @@ pub(super) fn client() -> Client {
     panic!("The requesting client must be initialized")
 }
 
-pub(super) fn oauth_client() -> OAuthClient {
-    if let Some(oauth_client) = unsafe { &OAUTH_CLIENT } {
+pub(super) fn auth_client() -> AuthClient {
+    if let Some(oauth_client) = unsafe { &AUTH_CLIENT } {
         return oauth_client.clone();
     }
     panic!("The requesting oauth client must be initialized")
@@ -103,7 +103,7 @@ impl Launcher {
             .cookie_store(false)
             .build()?;
 
-        let oauth_client = auth::OAuthClientBuilder::builder()
+        let auth_client = auth::AuthClientBuilder::builder()
             .user_agent(HEADER_UA)
             .chrome_builder(ChromeVersion::V108)
             .cookie_store(true)
@@ -114,7 +114,7 @@ impl Launcher {
 
         INIT.call_once(|| unsafe {
             CLIENT = Some(client);
-            OAUTH_CLIENT = Some(oauth_client);
+            AUTH_CLIENT = Some(auth_client);
         });
 
         info!(
@@ -133,6 +133,7 @@ impl Launcher {
         // serve
         let serve = HttpServer::new(move || {
             let app = App::new()
+                .wrap(actix_web::middleware::Compress::default())
                 .wrap(Logger::default())
                 // official dashboard api endpoint
                 .service(
@@ -154,8 +155,6 @@ impl Launcher {
                 )
                 // unofficial public api endpoint
                 .service(web::resource("/public-api/{tail:.*}").route(web::to(unofficial_proxy)))
-                // imgae(picture) endpoint
-                .service(web::resource("/_next/image").route(web::to(unofficial_proxy)))
                 // auth endpoint
                 .service(post_access_token)
                 .service(post_refresh_token)
@@ -265,7 +264,7 @@ impl Launcher {
 
 #[post("/auth/token")]
 async fn post_access_token(account: web::Form<auth::OAuthAccount>) -> impl Responder {
-    match oauth_client().do_access_token(&account.into_inner()).await {
+    match auth_client().do_access_token(&account.into_inner()).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
@@ -277,7 +276,7 @@ async fn post_refresh_token(req: HttpRequest) -> impl Responder {
         .headers()
         .get(header::AUTHORIZATION)
         .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
-    match oauth_client().do_refresh_token(refresh_token).await {
+    match auth_client().do_refresh_token(refresh_token).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }
@@ -289,7 +288,7 @@ async fn post_revoke_token(req: HttpRequest) -> impl Responder {
         .headers()
         .get(header::AUTHORIZATION)
         .map_or(EMPTY, |e| e.to_str().unwrap_or_default());
-    match oauth_client().do_revoke_token(refresh_token).await {
+    match auth_client().do_revoke_token(refresh_token).await {
         Ok(token) => HttpResponse::Ok().json(token),
         Err(err) => HttpResponse::BadRequest().json(err.to_string()),
     }

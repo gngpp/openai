@@ -18,11 +18,18 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="preconnect" href="/" />
-    <link href="/fonts/soehne/soehne-buch.woff2" as="font" crossorigin="" />
-    <link href="/soehne/soehne-halbfett.woff2" as="font" crossorigin="" />
-    <link href="/soehne/soehne-mono-buch.woff2" as="font" crossorigin="" />
-    <link href="/fonts/soehne/soehne-mono-halbfett.woff2" as="font" crossorigin="" />
-    <link href="/_next/static/css/2ae5d0bc3600f3f7.css" as="style" />
+    <script>
+        {% if api_prefix is defined and api_prefix != "" %}
+            window.__api_prefix = {{ api_prefix|safe }};
+        {% else %}
+            window.__api_prefix = window.location.origin;
+        {% endif %}
+    </script>
+    <link rel="preload" href="/fonts/soehne/soehne-buch.woff2" as="font" crossorigin="" />
+    <link rel="preload" href="/soehne/soehne-halbfett.woff2" as="font" crossorigin="" />
+    <link rel="preload" href="/soehne/soehne-mono-buch.woff2" as="font" crossorigin="" />
+    <link rel="preload" href="/fonts/soehne/soehne-mono-halbfett.woff2" as="font" crossorigin="" />
+    <link rel="preload" href="/_next/static/css/2ae5d0bc3600f3f7.css" as="style" />
     <link rel="stylesheet" href="/_next/static/css/2ae5d0bc3600f3f7.css" data-n-g="" />
     <noscript data-n-css=""></noscript>
     <script defer="" nomodule="" src="/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js"></script>
@@ -40,7 +47,7 @@
     <script src="/_next/static/chunks/293-defd068c38bd0c8d.js" defer=""></script>
     <script src="/_next/static/chunks/496-a3bbd8997fe0f8e4.js" defer=""></script>
     <script src="/_next/static/chunks/709-74a24b5cf35d07f9.js" defer=""></script>
-    <script src="/_next/static/chunks/pages/share/[[...shareParams]]-f2c05a366478888e.js" defer=""></script>
+    <script src="/_next/static/chunks/pages/share/%5B%5B...shareParams%5D%5D-f2c05a366478888e.js" defer=""></script>
     <script src="/_next/static/WLHd8p-1ysAW_5sZZPJIy/_buildManifest.js" defer=""></script>
     <script src="/_next/static/WLHd8p-1ysAW_5sZZPJIy/_ssgManifest.js" defer=""></script>
 </head>
