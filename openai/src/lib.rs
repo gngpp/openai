@@ -31,14 +31,16 @@ pub enum OAuthError {
     TooManyRequests(String),
     #[error("Unauthorized request (error {0:?}")]
     Unauthorized(String),
-    #[error("Unauthorized request (error {0:?}")]
-    ServerError(String),
+    #[error("Server error")]
+    ServerError,
     #[error("failed to get public key")]
     FailedPubKeyRequest,
     #[error("failed login")]
     FailedLogin,
     #[error(transparent)]
     FailedRequest(#[from] reqwest::Error),
+    #[error("invalid client request (error {0:?})")]
+    InvalidClientRequest(String),
     #[error("failed get code from callback url")]
     FailedCallbackCode,
     #[error("failed callback url")]

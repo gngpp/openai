@@ -70,7 +70,7 @@ where
                 let token = token.clone();
                 let svc = Rc::clone(&self.service);
                 Box::pin(async move {
-                    match token::verify_access_token_for_u8(token.as_bytes()).await {
+                    match token::check_for_u8(token.as_bytes()) {
                         Ok(_) => {
                             // forwarded responses map to "left" body
                             svc.call(request)

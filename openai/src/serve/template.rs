@@ -4,14 +4,21 @@ use actix_web::{
     cookie::{self, Cookie},
     error,
     http::header,
-    post, web, HttpRequest, HttpResponse, Responder, Result,
+    web, HttpRequest, HttpResponse, Responder, Result,
 };
 use chrono::prelude::{DateTime, Utc};
 use chrono::NaiveDateTime;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{auth, URL_CHATGPT_API};
+use crate::{
+    auth::{self, DashSession},
+    model::AuthenticateToken,
+    URL_CHATGPT_API,
+};
+
+use super::auth_client;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
@@ -24,10 +31,59 @@ const TEMP_DETAIL: &str = "detail.htm";
 const TEMP_LOGIN: &str = "login.htm";
 const TEMP_SHARE: &str = "share.htm";
 
-#[allow(dead_code)]
-struct Session<'a> {
-    token: &'a str,
-    picture: &'a str,
+#[derive(Serialize, Deserialize)]
+struct Session {
+    user_id: String,
+    nickname: String,
+    email: String,
+    picture: String,
+    access_token: String,
+    expires_in: i64,
+    expires: i64,
+}
+
+impl ToString for Session {
+    fn to_string(&self) -> String {
+        serde_json::to_string(self)
+            .expect("An error occurred during the internal serialization session")
+    }
+}
+
+impl TryFrom<&str> for Session {
+    type Error = error::Error;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        serde_json::from_str::<Session>(value)
+            .map_err(|err| error::ErrorUnauthorized(err.to_string()))
+    }
+}
+
+impl From<(&str, DashSession, i64, i64)> for Session {
+    fn from(value: (&str, DashSession, i64, i64)) -> Self {
+        Session {
+            user_id: value.1.user_id().to_owned(),
+            email: value.1.email().to_owned(),
+            picture: value.1.picture().to_owned(),
+            access_token: value.0.to_owned(),
+            nickname: value.1.nickname().to_owned(),
+            expires_in: value.2,
+            expires: value.3,
+        }
+    }
+}
+
+impl From<AuthenticateToken> for Session {
+    fn from(value: AuthenticateToken) -> Self {
+        Session {
+            user_id: value.user_id().to_owned(),
+            nickname: value.nickname().to_owned(),
+            email: value.email().to_owned(),
+            picture: value.picture().to_owned(),
+            access_token: value.access_token().to_owned(),
+            expires_in: value.expires_in(),
+            expires: value.expires(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -62,10 +118,11 @@ pub fn config(cfg: &mut web::ServiceConfig) {
     cfg.app_data(web::Data::new(tera))
         .app_data(web::Data::new(generate()))
         .route("/auth", web::get().to(get_auth))
-        .route("/login", web::get().to(get_login))
-        .route("/login", web::post().to(post_login))
+        .route("/auth/login", web::get().to(get_login))
+        .route("/auth/login", web::post().to(post_login))
+        .route("/auth/login/token", web::post().to(post_login_token))
         .route("/auth/logout", web::get().to(get_logout))
-        .route("/api/auth/session", web::get().to(get_session))
+        .route("/auth/session", web::get().to(get_session))
         .route("/", web::get().to(get_chat))
         .route("/c", web::get().to(get_chat))
         .route("/c/{conversation_id}", web::get().to(get_chat))
@@ -73,23 +130,26 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(web::redirect("/chat/{conversation_id}", "/"))
         .route("/share/{share_id}", web::get().to(get_share_chat))
         .route(
-            "/_next/data/WLHd8p-1ysAW_5sZZPJIy/index.json",
-            web::get().to(get_chat_info),
-        )
-        .route(
-            "/_next/data/WLHd8p-1ysAW_5sZZPJIy/c/{conversation_id}.json",
-            web::get().to(get_chat_info),
-        )
-        .route(
             "/share/{share_id}/continue",
             web::get().to(get_share_chat_continue),
         )
         .route(
-            "/_next/data/WLHd8p-1ysAW_5sZZPJIy/share/{share_id}.json",
+            &format!("/_next/data/{BUILD_ID}/index.json"),
+            web::get().to(get_chat_info),
+        )
+        .route(
+            &format!("/_next/data/{BUILD_ID}/c/{}.json", "{conversation_id}"),
+            web::get().to(get_chat_info),
+        )
+        .route(
+            &format!("/_next/data/{BUILD_ID}/share/{}.json", "{share_id}"),
             web::get().to(get_share_chat_info),
         )
         .route(
-            "/_next/data/WLHd8p-1ysAW_5sZZPJIy/share/{share_id}/continue.json",
+            &format!(
+                "/_next/data/{BUILD_ID}/share/{}/continue.json",
+                "{share_id}"
+            ),
             web::get().to(get_share_chat_continue_info),
         )
         // user picture
@@ -126,68 +186,77 @@ async fn post_login(
     tmpl: web::Data<tera::Tera>,
     query: web::Query<HashMap<String, String>>,
     account: web::Form<auth::OAuthAccount>,
-) -> impl Responder {
+) -> Result<HttpResponse> {
     let default_next = "/".to_owned();
     let next = query.get("next").unwrap_or(&default_next);
     let account = account.into_inner();
     match super::auth_client().do_access_token(&account).await {
-        Ok(access_token) => HttpResponse::SeeOther()
-            .cookie(
-                Cookie::build(SESSION_ID, access_token.access_token)
-                    .path(next)
-                    .max_age(cookie::time::Duration::seconds(access_token.expires_in))
-                    .same_site(cookie::SameSite::Lax)
-                    .secure(false)
-                    .http_only(true)
-                    .finish(),
-            )
-            .append_header((header::LOCATION, next.to_owned()))
-            .finish(),
+        Ok(access_token) => {
+            let authentication_token = AuthenticateToken::try_from(access_token)
+                .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+            let session = Session::from(authentication_token);
+            Ok(HttpResponse::SeeOther()
+                .cookie(
+                    Cookie::build(SESSION_ID, session.to_string())
+                        .path(next)
+                        .max_age(cookie::time::Duration::seconds(session.expires_in))
+                        .same_site(cookie::SameSite::Lax)
+                        .secure(false)
+                        .http_only(true)
+                        .finish(),
+                )
+                .append_header((header::LOCATION, next.to_owned()))
+                .finish())
+        }
         Err(e) => {
             let mut ctx = tera::Context::new();
             ctx.insert("next", next.as_str());
             ctx.insert("username", account.username());
             ctx.insert("error", &e.to_string());
-            render_template(tmpl, TEMP_LOGIN, &ctx).unwrap()
+            render_template(tmpl, TEMP_LOGIN, &ctx)
         }
     }
 }
 
-#[post("/login/token")]
-async fn login_token(req: HttpRequest) -> Result<HttpResponse> {
+async fn post_login_token(req: HttpRequest) -> Result<HttpResponse> {
     match req.headers().get(header::AUTHORIZATION) {
         Some(token) => {
-            match crate::token::verify_access_token(token.to_str().unwrap_or_default()).await {
-                Ok(token_profile) => {
-                    let profile = token_profile
-                        .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
-                    Ok(HttpResponse::SeeOther()
-                        .insert_header((header::LOCATION, "/"))
-                        .cookie(
-                            Cookie::build(SESSION_ID, token.to_str().unwrap())
-                                .path("/")
-                                .max_age(cookie::time::Duration::seconds(profile.expires()))
-                                .same_site(cookie::SameSite::Lax)
-                                .secure(false)
-                                .http_only(true)
-                                .finish(),
-                        )
-                        .finish())
-                }
-                Err(e) => Ok(HttpResponse::BadRequest().json(e.to_string())),
-            }
+            let access_token = token.to_str().unwrap_or_default();
+
+            let profile = crate::token::check(access_token)
+                .map_err(|e| error::ErrorUnauthorized(e.to_string()))?
+                .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+
+            let dash_session = auth_client()
+                .do_dashboard_login(access_token)
+                .await
+                .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+
+            let session = Session::from((
+                access_token,
+                dash_session,
+                profile.expires_in(),
+                profile.expires(),
+            ));
+
+            Ok(HttpResponse::SeeOther()
+                .insert_header((header::LOCATION, "/"))
+                .cookie(
+                    Cookie::build(SESSION_ID, session.to_string())
+                        .path("/")
+                        .max_age(cookie::time::Duration::seconds(session.expires_in))
+                        .same_site(cookie::SameSite::Lax)
+                        .secure(false)
+                        .http_only(true)
+                        .finish(),
+                )
+                .finish())
         }
         None => redirect_login(),
     }
 }
 
-async fn get_logout(req: HttpRequest) -> impl Responder {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => {
-            let _ = super::auth_client().do_revoke_token(cookie.value()).await;
-        }
-        None => {}
-    }
+async fn get_logout() -> impl Responder {
     HttpResponse::SeeOther()
         .cookie(
             Cookie::build(SESSION_ID, "")
@@ -196,42 +265,35 @@ async fn get_logout(req: HttpRequest) -> impl Responder {
                 .http_only(true)
                 .finish(),
         )
-        .insert_header((header::LOCATION, "/login"))
+        .insert_header((header::LOCATION, "/auth/login"))
         .finish()
 }
 
 async fn get_session(req: HttpRequest) -> Result<HttpResponse> {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => {
-                let profile =
-                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        let session = extract_session(cookie.value())?;
+        let dt = DateTime::<Utc>::from_utc(
+            NaiveDateTime::from_timestamp_opt(session.expires, 0).unwrap(),
+            Utc,
+        );
 
-                let dt = DateTime::<Utc>::from_utc(
-                    NaiveDateTime::from_timestamp_opt(profile.expires_at(), 0).unwrap(),
-                    Utc,
-                );
+        let props = serde_json::json!({
+            "user": {
+                "id": session.user_id,
+                "name": session.email,
+                "email": session.email,
+                "image": session.picture,
+                "picture": session.picture,
+                "groups": [],
+            },
+            "expires" : dt.naive_utc(),
+            "accessToken": session.access_token,
+            "authProvider": "auth0"
+        });
 
-                let props = serde_json::json!({
-                    "user": {
-                        "id": profile.user_id(),
-                        "name": profile.email(),
-                        "email": profile.email(),
-                        "image": "",
-                        "picture": "",
-                        "groups": [],
-                    },
-                    "expires" : dt.naive_utc(),
-                    "accessToken": cookie.value(),
-                    "authProvider": "auth0"
-                });
-
-                Ok(HttpResponse::Ok().json(props))
-            }
-            Err(_) => redirect_login(),
-        },
-        None => redirect_login(),
+        return Ok(HttpResponse::Ok().json(props));
     }
+    redirect_login()
 }
 
 async fn get_chat(
@@ -240,11 +302,9 @@ async fn get_chat(
     conversation_id: Option<web::Path<String>>,
     mut query: web::Query<HashMap<String, String>>,
 ) -> Result<HttpResponse> {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => {
-                let profile =
-                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Error"))?;
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        return match extract_session(cookie.value()) {
+            Ok(session) => {
                 let (template_name, path) = match conversation_id {
                     Some(conversation_id) => {
                         query.insert("chatId".to_string(), conversation_id.into_inner());
@@ -256,11 +316,11 @@ async fn get_chat(
                     "props": {
                         "pageProps": {
                             "user": {
-                                "id": profile.user_id(),
-                                "name": profile.email(),
-                                "email": profile.email(),
-                                "image": None::<String>,
-                                "picture": None::<String>,
+                                "id": session.user_id,
+                                "name": session.email,
+                                "email": session.email,
+                                "image": session.picture,
+                                "picture": session.picture,
                                 "groups": [],
                             },
                             "serviceStatus": {},
@@ -287,28 +347,26 @@ async fn get_chat(
                     &serde_json::to_string(&props)
                         .map_err(|e| error::ErrorInternalServerError(e.to_string()))?,
                 );
-                render_template(tmpl, template_name, &ctx)
+                return render_template(tmpl, template_name, &ctx);
             }
             Err(_) => redirect_login(),
-        },
-        None => redirect_login(),
+        };
     }
+    redirect_login()
 }
 
 async fn get_chat_info(req: HttpRequest) -> Result<HttpResponse> {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => {
-                let profile =
-                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        return match extract_session(cookie.value()) {
+            Ok(session) => {
                 let body = serde_json::json!({
                     "pageProps": {
                         "user": {
-                            "id": profile.user_id(),
-                            "name": profile.email(),
-                            "email": profile.email(),
-                            "image": "",
-                            "picture": "",
+                            "id": session.user_id,
+                            "name": session.email,
+                            "email": session.email,
+                            "image": session.picture,
+                            "picture": session.picture,
                             "groups": [],
                         },
                         "serviceStatus": {},
@@ -331,9 +389,9 @@ async fn get_chat_info(req: HttpRequest) -> Result<HttpResponse> {
                 );
                 Ok(HttpResponse::Ok().json(body))
             }
-        },
-        None => redirect_login(),
+        };
     }
+    redirect_login()
 }
 
 async fn get_share_chat(
@@ -342,8 +400,8 @@ async fn get_share_chat(
     share_id: web::Path<String>,
 ) -> Result<HttpResponse> {
     let share_id = share_id.into_inner();
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        return match extract_session(cookie.value()) {
             Ok(_) => {
                 let resp = super::client()
                     .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
@@ -418,12 +476,13 @@ async fn get_share_chat(
             Err(_) => Ok(HttpResponse::Found()
                 .insert_header((
                     header::LOCATION,
-                    format!("/login?next=%2Fshare%2F{share_id}"),
+                    format!("/auth/login?next=%2Fshare%2F{share_id}"),
                 ))
                 .finish()),
-        },
-        None => redirect_login(),
+        };
     }
+
+    redirect_login()
 }
 
 async fn get_share_chat_info(
@@ -431,59 +490,55 @@ async fn get_share_chat_info(
     share_id: web::Path<String>,
 ) -> Result<HttpResponse> {
     let share_id = share_id.into_inner();
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(_) => {
-                let resp = super::client()
-                    .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
-                    .bearer_auth(cookie.value())
-                    .send()
-                    .await
-                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        if extract_session(cookie.value()).is_ok() {
+            let resp = super::client()
+                .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
+                .bearer_auth(cookie.value())
+                .send()
+                .await
+                .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
 
-                match resp.json::<Value>().await {
-                    Ok(mut share_data) => {
-                        if let Some(replace) = share_data
-                            .get_mut("continue_conversation_url")
-                            .and_then(|v| v.as_str())
-                        {
-                            let new_value = replace.replace("https://chat.openai.com", "");
-                            share_data.as_object_mut().and_then(|data| {
-                                data.insert(
-                                    "continue_conversation_url".to_owned(),
-                                    json!(new_value),
-                                )
-                            });
-                        }
-
-                        let props = serde_json::json!({
-                            "pageProps": {
-                                "sharedConversationId": share_id,
-                                "serverResponse": {
-                                    "type": "data",
-                                    "data": share_data,
-                                },
-                                "continueMode": false,
-                                "moderationMode": false,
-                                "chatPageProps": {},
-                            },
-                            "__N_SSP": true
-                        }
-                        );
-                        Ok(HttpResponse::Ok().json(props))
+            return match resp.json::<Value>().await {
+                Ok(mut share_data) => {
+                    if let Some(replace) = share_data
+                        .get_mut("continue_conversation_url")
+                        .and_then(|v| v.as_str())
+                    {
+                        let new_value = replace.replace("https://chat.openai.com", "");
+                        share_data.as_object_mut().and_then(|data| {
+                            data.insert("continue_conversation_url".to_owned(), json!(new_value))
+                        });
                     }
-                    Err(_) => Ok(HttpResponse::Ok().json(serde_json::json!({"notFound": true}))),
+
+                    let props = serde_json::json!({
+                        "pageProps": {
+                            "sharedConversationId": share_id,
+                            "serverResponse": {
+                                "type": "data",
+                                "data": share_data,
+                            },
+                            "continueMode": false,
+                            "moderationMode": false,
+                            "chatPageProps": {},
+                        },
+                        "__N_SSP": true
+                    }
+                    );
+                    Ok(HttpResponse::Ok().json(props))
                 }
-            }
-            Err(_) => Ok(HttpResponse::Found()
-                .insert_header((
-                    header::LOCATION,
-                    format!("/login?next=%2Fshare%2F{share_id}"),
-                ))
-                .finish()),
-        },
-        None => redirect_login(),
+                Err(_) => Ok(HttpResponse::Ok().json(serde_json::json!({"notFound": true}))),
+            };
+        }
+
+        return Ok(HttpResponse::Found()
+            .insert_header((
+                header::LOCATION,
+                format!("/auth/login?next=%2Fshare%2F{share_id}"),
+            ))
+            .finish());
     }
+    redirect_login()
 }
 
 async fn get_share_chat_continue(share_id: web::Path<String>) -> Result<HttpResponse> {
@@ -499,86 +554,79 @@ async fn get_share_chat_continue_info(
     req: HttpRequest,
     share_id: web::Path<String>,
 ) -> Result<HttpResponse> {
-    match req.cookie(SESSION_ID) {
-        Some(cookie) => match crate::token::verify_access_token(cookie.value()).await {
-            Ok(token_profile) => {
-                let profile =
-                    token_profile.ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
-                    let resp = super::client()
-                    .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
-                    .bearer_auth(cookie.value())
-                    .send()
-                    .await
-                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
-
-                match resp.json::<Value>().await {
-                    Ok(mut share_data) => {
-                        if let Some(replace) = share_data
-                            .get_mut("continue_conversation_url")
-                            .and_then(|v| v.as_str())
-                        {
-                            let new_value = replace.replace("https://chat.openai.com", "");
-                            share_data.as_object_mut().and_then(|data| {
-                                data.insert(
-                                    "continue_conversation_url".to_owned(),
-                                    json!(new_value),
-                                )
-                            });
-                        }
-
-                        let props = serde_json::json!({
-                                "pageProps": {
-                                    "user": {
-                                        "id": profile.user_id(),
-                                        "name": profile.email(),
-                                        "email": profile.email(),
-                                        "image": None::<String>,
-                                        "picture": None::<String>,
-                                        "groups": [],
-                                    },
-                                    "serviceStatus": {},
-                                    "userCountry": "US",
-                                    "geoOk": true,
-                                    "serviceAnnouncement": {
-                                        "paid": {},
-                                        "public": {}
-                                    },
-                                    "isUserInCanPayGroup": true,
-                                    "sharedConversationId": share_id.into_inner(),
-                                    "serverResponse": {
-                                        "type": "data",
-                                        "data": share_data,
-                                    },
-                                    "continueMode": true,
-                                    "moderationMode": false,
-                                    "chatPageProps": {
-                                        "user": {
-                                            "id": profile.user_id(),
-                                            "name": profile.email(),
-                                            "email": profile.email(),
-                                            "image": None::<String>,
-                                            "picture": None::<String>,
-                                            "groups": [],
-                                        },
-                                        "serviceStatus": {},
-                                        "userCountry": "US",
-                                        "geoOk": true,
-                                        "serviceAnnouncement": {
-                                            "paid": {},
-                                            "public": {}
-                                        },
-                                        "isUserInCanPayGroup": true,
-                                    },
-                                },
-                                "__N_SSP": true
-                            });
-                        Ok(HttpResponse::Ok().json(props))
+    if let Some(cookie) = req.cookie(SESSION_ID) {
+        return match extract_session(cookie.value()) {
+            Ok(session) => {
+                let resp = super::client()
+                .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
+                .bearer_auth(cookie.value())
+                .send()
+                .await
+                .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+            match resp.json::<Value>().await {
+                Ok(mut share_data) => {
+                    if let Some(replace) = share_data
+                        .get_mut("continue_conversation_url")
+                        .and_then(|v| v.as_str())
+                    {
+                        let new_value = replace.replace("https://chat.openai.com", "");
+                        share_data.as_object_mut().and_then(|data| {
+                            data.insert("continue_conversation_url".to_owned(), json!(new_value))
+                        });
                     }
-                    Err(_) => Ok(HttpResponse::Ok()
+                    let props = serde_json::json!({
+                        "pageProps": {
+                            "user": {
+                                "id": session.user_id,
+                                "name": session.email,
+                                "email": session.email,
+                                "image": session.picture,
+                                "picture": session.picture,
+                                "groups": [],
+                            },
+                            "serviceStatus": {},
+                            "userCountry": "US",
+                            "geoOk": true,
+                            "serviceAnnouncement": {
+                                "paid": {},
+                                "public": {}
+                            },
+                            "isUserInCanPayGroup": true,
+                            "sharedConversationId": share_id.into_inner(),
+                            "serverResponse": {
+                                "type": "data",
+                                "data": share_data,
+                            },
+                            "continueMode": true,
+                            "moderationMode": false,
+                            "chatPageProps": {
+                                "user": {
+                                    "id": session.user_id,
+                                    "name": session.email,
+                                    "email": session.email,
+                                    "image": session.picture,
+                                    "picture": session.picture,
+                                    "groups": [],
+                                },
+                                "serviceStatus": {},
+                                "userCountry": "US",
+                                "geoOk": true,
+                                "serviceAnnouncement": {
+                                    "paid": {},
+                                    "public": {}
+                                },
+                                "isUserInCanPayGroup": true,
+                            },
+                        },
+                        "__N_SSP": true
+                    });
+                    Ok(HttpResponse::Ok().json(props))
+                }
+                Err(_) => Ok(HttpResponse::Ok()
                     .append_header(("referrer-policy", "same-origin"))
                     .json(serde_json::json!({"notFound": true}))),
-                }
             }
+            },
             Err(_) => {
                 Ok(HttpResponse::TemporaryRedirect()
                 .json(serde_json::json!({
@@ -588,12 +636,10 @@ async fn get_share_chat_continue_info(
                     },
                     "__N_SSP": true
                 })))
-            }
-        },
-        None => {
-            redirect_login()
-        },
+            },
+        };
     }
+    redirect_login()
 }
 
 async fn get_image(params: Option<web::Query<ImageQuery>>) -> Result<HttpResponse> {
@@ -626,9 +672,18 @@ async fn get_error_404(tmpl: web::Data<tera::Tera>) -> Result<HttpResponse> {
     render_template(tmpl, TEMP_404, &ctx)
 }
 
+fn extract_session(cookie_value: &str) -> Result<Session> {
+    Session::try_from(cookie_value)
+        .map_err(|err| error::ErrorUnauthorized("invalid session"))
+        .and_then(|session| match check_token(&session.access_token) {
+            Ok(_) => Ok(session),
+            Err(err) => Err(err),
+        })
+}
+
 fn redirect_login() -> Result<HttpResponse> {
     Ok(HttpResponse::Found()
-        .insert_header((header::LOCATION, "/login"))
+        .insert_header((header::LOCATION, "/auth/login"))
         .finish())
 }
 
@@ -643,6 +698,11 @@ fn render_template(
     Ok(HttpResponse::Ok()
         .content_type(header::ContentType::html())
         .body(tm))
+}
+
+fn check_token(token: &str) -> Result<()> {
+    let _ = crate::token::check(token).map_err(|e| error::ErrorUnauthorized(e.to_string()))?;
+    Ok(())
 }
 
 #[allow(dead_code)]

@@ -393,8 +393,10 @@ async fn gpt4_body_handle(req: &HttpRequest, body: &mut Option<Json<Value>>) {
             if let Some(v) = body.get("model").and_then(|m| m.as_str()) {
                 match ArkoseToken::new(v).await {
                     Ok(arkose) => {
-                        if let Ok(x) = serde_json::to_value(arkose) {
-                            let _ = body.insert("arkose_token".to_owned(), x);
+                        if body.get("arkose_token").is_none() {
+                            if let Ok(x) = serde_json::to_value(arkose) {
+                                let _ = body.insert("arkose_token".to_owned(), x);
+                            }
                         }
                     }
                     Err(_) => {}

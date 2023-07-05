@@ -159,9 +159,7 @@ impl AuthenticateTokenStore for TokenFileStore {
         &mut self,
         token: AuthenticateToken,
     ) -> TokenResult<Option<AuthenticateToken>> {
-        verify_access_token(&token.access_token())
-            .await
-            .context(TokenStoreError::AccessTokenVerifyError)?;
+        check(&token.access_token()).context(TokenStoreError::AccessTokenVerifyError)?;
         let bytes = tokio::fs::read(&self.0).await?;
         let mut data: HashMap<String, AuthenticateToken> = if bytes.is_empty() {
             HashMap::new()
@@ -244,7 +242,7 @@ async fn keys() -> TokenResult<KeyResult> {
     anyhow::bail!(OAuthError::FailedPubKeyRequest)
 }
 
-fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<TokenProfile> {
+fn check_info(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<TokenProfile> {
     let alg = Algorithm::new_rsa_pem_verifier(alg, pub_key)?;
     let verifier = Verifier::create().build()?;
     let claims = verifier.verify(token, &alg)?;
@@ -260,33 +258,40 @@ fn verify(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<TokenPro
     anyhow::bail!(OAuthError::InvalidAccessToken)
 }
 
-pub async fn verify_access_token_for_u8(token: &[u8]) -> TokenResult<Option<TokenProfile>> {
+pub fn check_for_u8(token: &[u8]) -> TokenResult<Option<TokenProfile>> {
     let x = String::from_utf8(token.to_vec())?;
-    verify_access_token(&x).await
+    check(&x)
 }
 
-pub async fn verify_access_token(token: &str) -> TokenResult<Option<TokenProfile>> {
+#[cfg(feature = "remote-token")]
+pub async fn await_check_for_u8(token: &[u8]) -> TokenResult<Option<TokenProfile>> {
+    let x = String::from_utf8(token.to_vec())?;
+    await_check(&x).await
+}
+
+#[cfg(feature = "remote-token")]
+pub fn await_check(token: &str) -> TokenResult<Option<TokenProfile>> {
     let token = token.trim_start_matches("Bearer ");
     if token.starts_with("sk-") || token.starts_with("sess-") {
         return Ok(None);
     }
-    match verify(token, PUBLIC_KEY, AlgorithmID::RS256) {
-        Ok(v) => Ok(Some(v)),
-        #[cfg(not(feature = "remote-token"))]
-        Err(err) => Err(err),
-        #[cfg(feature = "remote-token")]
-        Err(_) => {
-            let key_result = keys().await?;
-            let key = key_result
-                .keys
-                .first()
-                .ok_or(OAuthError::FailedPubKeyRequest)?;
-            let pub_key = key.x5c.first().ok_or(OAuthError::FailedPubKeyRequest)?;
-            let pub_key = format!("-----BEGIN PUBLIC KEY-----{pub_key}-----END PUBLIC KEY-----");
-            let alg = AlgorithmID::from_str(key.alg.as_str())?;
-            verify(token, pub_key.as_bytes(), alg)
-        }
+    let key_result = keys().await?;
+    let key = key_result
+        .keys
+        .first()
+        .ok_or(OAuthError::FailedPubKeyRequest)?;
+    let pub_key = key.x5c.first().ok_or(OAuthError::FailedPubKeyRequest)?;
+    let pub_key = format!("-----BEGIN PUBLIC KEY-----{pub_key}-----END PUBLIC KEY-----");
+    let alg = AlgorithmID::from_str(key.alg.as_str())?;
+    Ok(Some(check_info(token, pub_key.as_bytes(), alg)))
+}
+
+pub fn check(token: &str) -> TokenResult<Option<TokenProfile>> {
+    let token = token.trim_start_matches("Bearer ");
+    if token.starts_with("sk-") || token.starts_with("sess-") {
+        return Ok(None);
     }
+    Ok(Some(check_info(token, PUBLIC_KEY, AlgorithmID::RS256)?))
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -314,11 +319,11 @@ impl TokenProfile {
         &self.https_api_openai_com_auth.user_id
     }
 
-    pub fn expires_at(&self) -> i64 {
+    pub fn expires(&self) -> i64 {
         self.exp
     }
 
-    pub fn expires(&self) -> i64 {
+    pub fn expires_in(&self) -> i64 {
         let current_timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Failed to get current timestamp.")

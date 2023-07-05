@@ -3,18 +3,32 @@ use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose, Engine};
 
 use crate::OAuthError;
+use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthenticateToken {
     access_token: String,
     refresh_token: String,
     expires: i64,
+    expires_in: i64,
     profile: Profile,
 }
 
 impl AuthenticateToken {
+    pub fn user_id(&self) -> &str {
+        &self.profile.https_api_openai_com_auth.user_id
+    }
+
+    pub fn nickname(&self) -> &str {
+        &self.profile.nickname
+    }
+
     pub fn email(&self) -> &str {
         &self.profile.email
+    }
+
+    pub fn picture(&self) -> &str {
+        &self.profile.picture
     }
 
     pub fn access_token(&self) -> &str {
@@ -32,8 +46,12 @@ impl AuthenticateToken {
         chrono::Utc::now().timestamp() > self.expires
     }
 
-    pub fn expired(&self) -> i64 {
+    pub fn expires(&self) -> i64 {
         self.expires
+    }
+
+    pub fn expires_in(&self) -> i64 {
+        self.expires_in
     }
 
     pub fn profile(&self) -> &Profile {
@@ -41,9 +59,45 @@ impl AuthenticateToken {
     }
 }
 
+impl TryFrom<crate::auth::AccessToken> for AuthenticateToken {
+    type Error = anyhow::Error;
+
+    fn try_from(value: crate::auth::AccessToken) -> Result<Self, Self::Error> {
+        let profile = Profile::try_from(value.id_token)?;
+        let expires =
+            (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)).timestamp();
+        Ok(Self {
+            access_token: value.access_token,
+            refresh_token: value.refresh_token,
+            expires,
+            profile,
+            expires_in: value.expires_in,
+        })
+    }
+}
+
+impl TryFrom<crate::auth::RefreshToken> for AuthenticateToken {
+    type Error = anyhow::Error;
+
+    fn try_from(value: crate::auth::RefreshToken) -> Result<Self, Self::Error> {
+        let profile = Profile::try_from(value.id_token)?;
+        let expires =
+            (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)).timestamp();
+        Ok(Self {
+            access_token: value.access_token,
+            refresh_token: value.refresh_token,
+            expires,
+            profile,
+            expires_in: value.expires_in,
+        })
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Profile {
+    #[serde(rename = "https://api.openai.com/auth")]
+    pub https_api_openai_com_auth: HttpsApiOpenaiComAuth,
     pub nickname: String,
     pub name: String,
     pub picture: String,
@@ -73,34 +127,17 @@ impl TryFrom<String> for Profile {
     }
 }
 
-impl TryFrom<crate::auth::AccessToken> for AuthenticateToken {
-    type Error = anyhow::Error;
-
-    fn try_from(value: crate::auth::AccessToken) -> Result<Self, Self::Error> {
-        let profile = Profile::try_from(value.id_token)?;
-        let expires =
-            (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)).timestamp();
-        Ok(Self {
-            access_token: value.access_token,
-            refresh_token: value.refresh_token,
-            expires,
-            profile,
-        })
-    }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HttpsApiOpenaiComAuth {
+    pub groups: Vec<Value>,
+    pub organizations: Vec<Organization>,
+    pub user_id: String,
 }
 
-impl TryFrom<crate::auth::RefreshToken> for AuthenticateToken {
-    type Error = anyhow::Error;
-
-    fn try_from(value: crate::auth::RefreshToken) -> Result<Self, Self::Error> {
-        let profile = Profile::try_from(value.id_token)?;
-        let expires =
-            (chrono::Utc::now() + chrono::Duration::seconds(value.expires_in)).timestamp();
-        Ok(Self {
-            access_token: value.access_token,
-            refresh_token: value.refresh_token,
-            expires,
-            profile,
-        })
-    }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Organization {
+    pub id: String,
+    pub is_default: bool,
+    pub role: String,
+    pub title: String,
 }

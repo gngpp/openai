@@ -41,7 +41,7 @@ pub struct AuthClient {
 }
 
 impl AuthClient {
-    pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<Session> {
+    pub async fn do_dashboard_login(&self, access_token: &str) -> OAuthResult<DashSession> {
         let resp = self
             .client
             .post(format!("{OPENAI_API_URL}/dashboard/onboarding/login"))
@@ -370,7 +370,6 @@ impl AuthClient {
     }
 
     async fn handle_error(&self, status: Option<StatusCode>, err_msg: String) -> OAuthError {
-        debug!("{err_msg}");
         match status {
             Some(
                 status_code @ (StatusCode::UNAUTHORIZED
@@ -395,10 +394,10 @@ impl AuthClient {
                 }
 
                 if status_code.is_client_error() {
-                    return OAuthError::FailedLogin;
+                    return OAuthError::InvalidClientRequest(err_msg);
                 }
 
-                OAuthError::ServerError(err_msg)
+                OAuthError::ServerError
             }
             _ => OAuthError::InvalidRequest("Invalid Request".to_owned()),
         }
@@ -600,16 +599,27 @@ pub struct AuthClientBuilder {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Session {
+pub struct DashSession {
     pub object: String,
     pub user: User,
     pub invites: Vec<Value>,
 }
 
-impl Session {
+impl DashSession {
     pub fn sensitive_id(&self) -> &str {
         &self.user.session.sensitive_id
+    }
+
+    pub fn user_id(&self) -> &str {
+        &self.user.id
+    }
+
+    pub fn nickname(&self) -> &str {
+        &self.user.name
+    }
+
+    pub fn email(&self) -> &str {
+        &self.user.email
     }
 
     pub fn picture(&self) -> &str {
@@ -618,7 +628,6 @@ impl Session {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct User {
     pub object: String,
     pub id: String,
@@ -627,36 +636,30 @@ pub struct User {
     pub picture: String,
     pub created: i64,
     pub groups: Vec<Value>,
-    pub session: VSession,
+    pub session: Session,
     pub orgs: Orgs,
-    #[serde(rename = "intercom_hash")]
     pub intercom_hash: String,
     pub amr: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VSession {
-    #[serde(rename = "sensitive_id")]
+pub struct Session {
     pub sensitive_id: String,
     pub object: String,
     pub name: Value,
     pub created: i64,
-    #[serde(rename = "last_use")]
     pub last_use: i64,
     pub publishable: bool,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Orgs {
     pub object: String,
-    pub data: Vec<Daum>,
+    pub data: Vec<OrgsData>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Daum {
+pub struct OrgsData {
     pub object: String,
     pub id: String,
     pub created: i64,
@@ -664,7 +667,6 @@ pub struct Daum {
     pub name: String,
     pub description: String,
     pub personal: bool,
-    #[serde(rename = "is_default")]
     pub is_default: bool,
     pub role: String,
     pub groups: Vec<Value>,
