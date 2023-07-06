@@ -23,3 +23,4 @@ Cargo.lock
 thunder-tests
 .env
 ./arkose
+opengpt
