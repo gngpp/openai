@@ -1,5 +1,8 @@
 # opengpt
 Not just a unofficial ChatGPT proxy (bypass Cloudflare 403 Access Denied)
+- Limitations
+> This cannot get around an outright IP ban by OpenAI
+
 ### Features
 - API-Key authentication
 - Email/Password account authentication
