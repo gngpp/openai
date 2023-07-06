@@ -1,6 +1,5 @@
 # opengpt
-Not just a command-line ChatGPT (bypass Cloudflare 403 Access Denied)
-
+Not just a unofficial ChatGPT proxy (bypass Cloudflare 403 Access Denied)
 ### Features
 - API-Key authentication
 - Email/Password account authentication
