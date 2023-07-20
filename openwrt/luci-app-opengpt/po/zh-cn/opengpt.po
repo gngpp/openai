@@ -34,7 +34,7 @@ msgstr "监听端口"
 msgid "Workers"
 msgstr "工作线程"
 
-msgid "Proxy"
+msgid "Proxies"
 msgstr "代理"
 
 msgid "TCP Keep-Alive (seconds)"

@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{model::AuthenticateToken, AuthError, TokenStoreError};
+use crate::{error::TokenStoreError, model::AuthenticateToken};
 use anyhow::Context;
 
 use jsonwebtokens::{Algorithm, AlgorithmID, Verifier};
@@ -255,7 +255,7 @@ fn check_info(token: &str, pub_key: &[u8], alg: AlgorithmID) -> TokenResult<Toke
     {
         return Ok(serde_json::from_value(claims)?);
     }
-    anyhow::bail!(AuthError::InvalidAccessToken)
+    anyhow::bail!("invalid access token")
 }
 
 pub fn check_for_u8(token: &[u8]) -> TokenResult<Option<TokenProfile>> {

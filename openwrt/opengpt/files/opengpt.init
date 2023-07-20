@@ -11,7 +11,7 @@ get_config() {
 	config_get host $1 host "0.0.0.0"
 	config_get port $1 port "7999"
 	config_get workers $1 workers '1'
-	config_get proxy $1 proxy ''
+	config_get proxies $1 proxies ''
 	config_get timeout $1 timeout '600'
 	config_get connect_timeout $1 connect_timeout '60'
 	config_get tcp_keepalive $1 tcp_keepalive "5"
@@ -48,8 +48,8 @@ start_service() {
 		args="$args --workers $workers"
 	fi
 
-	if [ -n "$proxy" ]; then
-		args="$args --proxy $proxy"
+	if [ -n "$proxies" ]; then
+		args="$args --proxies $proxies"
 	fi
 
 	if [ -n "$timeout" ]; then
@@ -96,7 +96,7 @@ start_service() {
 	fi
 	
 	procd_open_instance
-	procd_set_param command /bin/sh -c "$PROG serve $args >>/var/log/opengpt.log 2>&1"
+	procd_set_param command /bin/sh -c "$PROG serve run $args >>/var/log/opengpt.log 2>&1"
 	procd_set_param stdout 0
 	procd_set_param stderr 0
 	procd_set_param pidfile /var/run/opengpt.pid

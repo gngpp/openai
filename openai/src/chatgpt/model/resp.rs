@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::opengpt::Success;
+use crate::chatgpt::Success;
 
 use super::{Author, Role};
 

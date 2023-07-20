@@ -4,6 +4,7 @@ use actix_web::cookie;
 use actix_web::{
     cookie::Cookie, error, http::header, web, HttpRequest, HttpResponse, Responder, Result,
 };
+use base64::Engine;
 use chrono::NaiveDateTime;
 use chrono::{prelude::DateTime, Utc};
 
@@ -11,10 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    auth::{
-        model::{AuthAccount, DashSession},
-        AuthHandle,
-    },
+    auth::{model::AuthAccount, AuthHandle},
     model::AuthenticateToken,
     URL_CHATGPT_API,
 };
@@ -46,8 +44,9 @@ struct Session {
 
 impl ToString for Session {
     fn to_string(&self) -> String {
-        serde_json::to_string(self)
-            .expect("An error occurred during the internal serialization session")
+        let json = serde_json::to_string(self)
+            .expect("An error occurred during the internal serialization session");
+        base64::engine::general_purpose::URL_SAFE.encode(json.as_bytes())
     }
 }
 
@@ -55,22 +54,10 @@ impl TryFrom<&str> for Session {
     type Error = error::Error;
 
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
-        serde_json::from_str::<Session>(value)
-            .map_err(|err| error::ErrorUnauthorized(err.to_string()))
-    }
-}
-
-impl From<(&str, DashSession, i64, i64)> for Session {
-    fn from(value: (&str, DashSession, i64, i64)) -> Self {
-        Session {
-            user_id: value.1.user_id().to_owned(),
-            email: value.1.email().to_owned(),
-            picture: Some(value.1.picture().to_owned()),
-            access_token: value.0.to_owned(),
-            expires_in: value.2,
-            expires: value.3,
-            refresh_token: None,
-        }
+        let data = base64::engine::general_purpose::URL_SAFE
+            .decode(value)
+            .map_err(|err| error::ErrorUnauthorized(err.to_string()))?;
+        serde_json::from_slice(&data).map_err(|err| error::ErrorUnauthorized(err.to_string()))
     }
 }
 
@@ -96,7 +83,22 @@ impl From<AuthenticateToken> for Session {
 #[allow(dead_code)]
 #[derive(Clone)]
 pub(super) struct TemplateData {
-    pub(crate) api_prefix: String,
+    /// WebSite api prefix
+    api_prefix: Option<String>,
+    /// Cloudflare captcha site key
+    cf_site_key: Option<String>,
+    /// Cloudflare captcha secret key
+    cf_secret_key: Option<String>,
+}
+
+impl From<super::Launcher> for TemplateData {
+    fn from(value: super::Launcher) -> Self {
+        Self {
+            api_prefix: Some(value.api_prefix.unwrap_or("".to_owned())),
+            cf_site_key: value.cf_site_key,
+            cf_secret_key: value.cf_secret_key,
+        }
+    }
 }
 
 async fn get_static_resource(
@@ -174,29 +176,42 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .default_service(web::route().to(get_error_404));
 }
 
-async fn get_auth(tmpl: web::Data<tera::Tera>) -> Result<HttpResponse> {
-    render_template(tmpl, TEMP_AUTH, &tera::Context::new())
+async fn get_auth(
+    tmpl: web::Data<tera::Tera>,
+    data: web::Data<TemplateData>,
+) -> Result<HttpResponse> {
+    let mut ctx = tera::Context::new();
+    settings_template_data(&mut ctx, &data);
+    render_template(tmpl, TEMP_AUTH, &ctx)
 }
 
 async fn get_login(
     tmpl: web::Data<tera::Tera>,
-    query: web::Query<HashMap<String, String>>,
+    data: web::Data<TemplateData>,
 ) -> Result<HttpResponse> {
     let mut ctx = tera::Context::new();
-    ctx.insert("next", query.get("next").unwrap_or(&"".to_owned()));
     ctx.insert("error", "");
     ctx.insert("username", "");
+    settings_template_data(&mut ctx, &data);
     render_template(tmpl, TEMP_LOGIN, &ctx)
 }
 
 async fn post_login(
     tmpl: web::Data<tera::Tera>,
-    query: web::Query<HashMap<String, String>>,
+    data: web::Data<TemplateData>,
+    req: HttpRequest,
     account: web::Form<AuthAccount>,
 ) -> Result<HttpResponse> {
-    let default_next = DEFAULT_INDEX.to_owned();
-    let next = query.get("next").unwrap_or(&default_next);
     let account = account.into_inner();
+    if let Some(err) = cf_captcha_check(&req, &data, account.cf_turnstile_response.as_deref())
+        .await
+        .err()
+    {
+        let mut ctx = tera::Context::new();
+        ctx.insert("username", &account.username);
+        ctx.insert("error", &err.to_string());
+        return render_template(tmpl, TEMP_LOGIN, &ctx);
+    }
     match super::auth_client().do_access_token(&account).await {
         Ok(access_token) => {
             let authentication_token = AuthenticateToken::try_from(access_token)
@@ -212,13 +227,12 @@ async fn post_login(
                         .http_only(false)
                         .finish(),
                 )
-                .append_header((header::LOCATION, next.to_owned()))
+                .append_header((header::LOCATION, DEFAULT_INDEX))
                 .finish())
         }
         Err(e) => {
             let mut ctx = tera::Context::new();
-            ctx.insert("next", next.as_str());
-            ctx.insert("username", account.username());
+            ctx.insert("username", &account.username);
             ctx.insert("error", &e.to_string());
             render_template(tmpl, TEMP_LOGIN, &ctx)
         }
@@ -232,13 +246,16 @@ async fn post_login_token(req: HttpRequest) -> Result<HttpResponse> {
             .map_err(|e| error::ErrorUnauthorized(e.to_string()))?
             .ok_or(error::ErrorInternalServerError("Get Profile Erorr"))?;
 
-        let session = match auth_client().do_dashboard_login(access_token).await {
-            Ok(dash_session) => Session::from((
-                access_token,
-                dash_session,
-                profile.expires_in(),
-                profile.expires(),
-            )),
+        let session = match auth_client().do_get_user_picture(access_token).await {
+            Ok(picture) => Session {
+                refresh_token: None,
+                access_token: access_token.to_owned(),
+                user_id: profile.user_id().to_owned(),
+                email: profile.email().to_owned(),
+                picture: picture,
+                expires_in: profile.expires_in(),
+                expires: profile.expires(),
+            },
             Err(_) => Session {
                 user_id: profile.user_id().to_owned(),
                 email: profile.email().to_owned(),
@@ -425,7 +442,7 @@ async fn get_share_chat(
     if let Some(cookie) = req.cookie(SESSION_ID) {
         return match extract_session(cookie.value()) {
             Ok(_) => {
-                let resp = super::client()
+                let resp = super::api_client()
                     .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
                     .bearer_auth(cookie.value())
                     .send()
@@ -514,7 +531,7 @@ async fn get_share_chat_info(
     let share_id = share_id.into_inner();
     if let Some(cookie) = req.cookie(SESSION_ID) {
         if extract_session(cookie.value()).is_ok() {
-            let resp = super::client()
+            let resp = super::api_client()
                 .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
                 .bearer_auth(cookie.value())
                 .send()
@@ -579,7 +596,7 @@ async fn get_share_chat_continue_info(
     if let Some(cookie) = req.cookie(SESSION_ID) {
         return match extract_session(cookie.value()) {
             Ok(session) => {
-                let resp = super::client()
+                let resp = super::api_client()
                 .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
                 .bearer_auth(cookie.value())
                 .send()
@@ -666,7 +683,7 @@ async fn get_share_chat_continue_info(
 
 async fn get_image(params: Option<web::Query<ImageQuery>>) -> Result<HttpResponse> {
     let query = params.ok_or(error::ErrorBadRequest("Missing URL parameter"))?;
-    let resp = super::client().get(&query.url).send().await;
+    let resp = super::api_client().get(&query.url).send().await;
     Ok(super::response_convert(resp))
 }
 
@@ -711,19 +728,65 @@ fn redirect_login() -> Result<HttpResponse> {
 
 fn render_template(
     tmpl: web::Data<tera::Tera>,
-    template_name: &str,
+    name: &str,
     context: &tera::Context,
 ) -> Result<HttpResponse> {
     let tm = tmpl
-        .render(template_name, context)
+        .render(name, context)
         .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
     Ok(HttpResponse::Ok()
         .content_type(header::ContentType::html())
         .body(tm))
 }
 
+fn settings_template_data(ctx: &mut tera::Context, data: &web::Data<TemplateData>) {
+    if let Some(site_key) = &data.cf_site_key {
+        ctx.insert("site_key", site_key);
+    }
+    if let Some(api_prefix) = &data.api_prefix {
+        ctx.insert("api_prefix", api_prefix);
+    }
+}
+
 fn check_token(token: &str) -> Result<()> {
     let _ = crate::token::check(token).map_err(|e| error::ErrorUnauthorized(e.to_string()))?;
+    Ok(())
+}
+
+async fn cf_captcha_check(
+    req: &HttpRequest,
+    data: &web::Data<TemplateData>,
+    cf_response: Option<&str>,
+) -> Result<()> {
+    if data.cf_site_key.is_some() && data.cf_secret_key.is_some() {
+        return match cf_response {
+            Some(cf_response) => {
+                if cf_response.is_empty() {
+                    return Err(error::ErrorBadRequest("Missing cf_captcha_response"));
+                }
+
+                let conn = req.connection_info();
+                let form = CfCaptchaForm {
+                    secret: data.cf_secret_key.as_ref().unwrap(),
+                    response: cf_response,
+                    remoteip: conn.peer_addr().unwrap(),
+                    idempotency_key: crate::uuid::uuid(),
+                };
+
+                let resp = super::api_client()
+                    .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+                    .form(&form)
+                    .send()
+                    .await
+                    .map_err(|e| error::ErrorInternalServerError(e.to_string()))?;
+                match resp.error_for_status() {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(error::ErrorUnauthorized(e.to_string())),
+                }
+            }
+            None => Err(error::ErrorBadRequest("Missing cf_captcha_response")),
+        };
+    };
     Ok(())
 }
 
@@ -733,4 +796,12 @@ struct ImageQuery {
     url: String,
     w: String,
     q: String,
+}
+
+#[derive(serde::Serialize)]
+struct CfCaptchaForm<'a> {
+    secret: &'a str,
+    response: &'a str,
+    remoteip: &'a str,
+    idempotency_key: String,
 }

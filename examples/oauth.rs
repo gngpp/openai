@@ -8,7 +8,6 @@ async fn main() -> anyhow::Result<()> {
     let password = std::env::var("PASSWORD")?;
     let auth = openai::auth::AuthClientBuilder::builder()
         .user_agent(openai::HEADER_UA)
-        .chrome_builder(reqwest::browser::ChromeVersion::V110)
         .cookie_store(true)
         .timeout(time::Duration::from_secs(1000))
         .connect_timeout(time::Duration::from_secs(1000))

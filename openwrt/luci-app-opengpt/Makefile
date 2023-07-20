@@ -3,7 +3,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-opengpt
-PKG_VERSION:=1.0.3
+PKG_VERSION:=1.0.4
 
 PKG_MAINTAINER:=gngpp <gngppz@gmail.com>
 

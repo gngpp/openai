@@ -3,7 +3,7 @@ use std::time;
 use futures_util::StreamExt;
 use openai::{
     auth::{model::AuthAccountBuilder, AuthHandle},
-    opengpt::model::req::{self, PostConvoRequest},
+    chatgpt::model::req::{self, PostConvoRequest},
 };
 use tokio::io::AsyncWriteExt;
 
@@ -13,7 +13,6 @@ async fn main() -> anyhow::Result<()> {
     let password = std::env::var("PASSWORD")?;
     let auth = openai::auth::AuthClientBuilder::builder()
         .user_agent(openai::HEADER_UA)
-        .chrome_builder(reqwest::browser::ChromeVersion::V110)
         .cookie_store(true)
         .timeout(std::time::Duration::from_secs(20))
         .build();
@@ -27,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
     let auth_token = openai::model::AuthenticateToken::try_from(token)?;
-    let api = openai::opengpt::OpenGPTBuilder::builder()
+    let api = openai::chatgpt::OpenGPTBuilder::builder()
         .access_token(auth_token.access_token().to_owned())
         .cookie_store(false)
         .client_timeout(time::Duration::from_secs(1000))
@@ -37,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
     let resp = api.get_models().await?;
     let model = resp.real_models();
 
-    let parent_message_id = uuid::Uuid::new_v4().to_string();
-    let message_id = uuid::Uuid::new_v4().to_string();
+    let parent_message_id = openai::uuid::uuid();
+    let message_id = openai::uuid::uuid();
     let req = req::PostNextConvoRequestBuilder::default()
         .model(model[0])
         .message_id(&message_id)

@@ -1,8 +1,19 @@
+use super::AuthStrategy;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::AuthStrategy;
+#[derive(Deserialize, Builder)]
+pub struct AuthAccount {
+    pub username: String,
+    pub password: String,
+    #[builder(setter(into, strip_option), default)]
+    pub mfa: Option<String>,
+    pub option: AuthStrategy,
+    #[builder(setter(into, strip_option), default)]
+    #[serde(rename = "cf-turnstile-response")]
+    pub cf_turnstile_response: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct AppleAccessToken {
@@ -19,29 +30,6 @@ pub struct RefreshToken {
     pub refresh_token: String,
     pub id_token: String,
     pub expires_in: i64,
-}
-
-#[derive(Deserialize, Builder)]
-pub struct AuthAccount {
-    pub(super) username: String,
-    pub(super) password: String,
-    #[builder(setter(into, strip_option), default)]
-    pub(super) mfa: Option<String>,
-    pub(super) option: AuthStrategy,
-}
-
-impl AuthAccount {
-    pub fn username(&self) -> &str {
-        self.username.as_ref()
-    }
-
-    pub fn password(&self) -> &str {
-        self.password.as_ref()
-    }
-
-    pub fn mfa(&self) -> Option<&str> {
-        self.mfa.as_deref()
-    }
 }
 
 #[derive(Deserialize)]

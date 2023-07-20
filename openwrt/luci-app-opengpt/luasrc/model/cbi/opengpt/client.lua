@@ -12,7 +12,7 @@ s.anonymous = true
 o = s:option(Flag, "enabled", translate("Enabled"))
 o.rmempty = false
 
-o = s:option(Value, "proxy", translate("Proxy"), translate("Supports http/https/socks5, format: protocol://user:pass@ip:port"))
+o = s:option(Value, "proxies", translate("Proxies"), translate("Supports http/https/socks5, format: protocol://user:pass@ip:port"))
 
 o = s:option(Value, "level", translate("Log Level"), translate("info/debug/warn/trace/error"))
 o.default = "info"

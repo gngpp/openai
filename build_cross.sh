@@ -57,7 +57,7 @@ build_windows_target() {
         -v $(pwd):/home/rust/src \
         -v $HOME/.cargo/registry:/usr/local/cargo/registry \
         -v $HOME/.cargo/git:/usr/local/cargo/git \
-        ghcr.io/gngpp/opengpt-builder:$1 cargo xwin build --release --target x86_64-pc-windows-msvc
+        ghcr.io/gngpp/opengpt-builder:$1 cargo xwin build --release --target $1
     sudo chmod -R 777 target
     sudo upx --lzma target/$1/release/opengpt.exe
     cd target/$1/release
@@ -88,6 +88,7 @@ fi
 
 if [ "$os" = "macos" ]; then
     brew install upx
+    rustup target add x86_64-apple-darwin aarch64-apple-darwin
     target_list=(x86_64-apple-darwin aarch64-apple-darwin)
     for target in "${target_list[@]}"; do
         build_macos_target "$target"
