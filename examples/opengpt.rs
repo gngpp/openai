@@ -1,34 +1,18 @@
 use std::time;
 
 use futures_util::StreamExt;
-use openai::{
-    auth::{model::AuthAccountBuilder, AuthHandle},
-    chatgpt::model::req::{self, PostConvoRequest},
+use openai::chatgpt::model::{
+    req::{self, PostConvoRequest},
+    resp,
 };
 use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let email = std::env::var("EMAIL")?;
-    let password = std::env::var("PASSWORD")?;
-    let auth = openai::auth::AuthClientBuilder::builder()
-        .user_agent(openai::HEADER_UA)
-        .cookie_store(true)
-        .timeout(std::time::Duration::from_secs(20))
-        .build();
-    let token = auth
-        .do_access_token(
-            &AuthAccountBuilder::default()
-                .username(email)
-                .password(password)
-                .option(openai::auth::AuthStrategy::Web)
-                .build()?,
-        )
-        .await?;
-    let auth_token = openai::model::AuthenticateToken::try_from(token)?;
+    let access_token = std::env::var("TOKEN")?;
     let api = openai::chatgpt::OpenGPTBuilder::builder()
-        .access_token(auth_token.access_token().to_owned())
-        .cookie_store(false)
+        .access_token(access_token)
+        .cookie_store(true)
         .client_timeout(time::Duration::from_secs(1000))
         .client_connect_timeout(time::Duration::from_secs(1000))
         .build();
@@ -55,28 +39,35 @@ async fn main() -> anyhow::Result<()> {
     let mut end_message_id: Option<String> = None;
     let mut end_turn: Option<bool> = None;
     while let Some(body) = resp.next().await {
-        if let Ok(body) = body {
-            if conversation_id.is_none() {
-                conversation_id = Some(body.conversation_id.to_string())
-            }
+        if let Ok(resp) = body {
+            match resp {
+                resp::PostConvoResponse::Conversation(body) => {
+                    if conversation_id.is_none() {
+                        conversation_id = Some(body.conversation_id.to_string())
+                    }
 
-            if end_message_id.is_none() {
-                end_message_id = Some(body.message_id().to_string())
-            }
+                    if end_message_id.is_none() {
+                        end_message_id = Some(body.message_id().to_string())
+                    }
 
-            if let Some(end) = body.end_turn() {
-                end_turn = Some(end)
-            }
+                    if let Some(end) = body.end_turn() {
+                        end_turn = Some(end)
+                    }
 
-            let message = &body.message()[0];
-            if message.starts_with(&previous_message) {
-                let new_chars = message.trim_start_matches(&previous_message);
-                out.write_all(new_chars.as_bytes()).await?;
-            } else {
-                out.write_all(message.as_bytes()).await?;
+                    let message = &body.message()[0];
+                    if message.starts_with(&previous_message) {
+                        let new_chars = message.trim_start_matches(&previous_message);
+                        out.write_all(new_chars.as_bytes()).await?;
+                    } else {
+                        out.write_all(message.as_bytes()).await?;
+                    }
+                    out.flush().await?;
+                    previous_message = message.to_string();
+                }
+                resp::PostConvoResponse::Moderation(body) => {
+                    println!("{:?}", body);
+                }
             }
-            out.flush().await?;
-            previous_message = message.to_string();
         }
     }
 
@@ -121,15 +112,22 @@ async fn main() -> anyhow::Result<()> {
             .await;
         while let Some(body) = resp.next().await {
             if let Ok(body) = body {
-                let message = &body.message()[0];
-                if message.starts_with(&previous_message) {
-                    let new_chars = message.trim_start_matches(&previous_message);
-                    out.write_all(new_chars.as_bytes()).await?;
-                } else {
-                    out.write_all(message.as_bytes()).await?;
+                match body {
+                    resp::PostConvoResponse::Conversation(body) => {
+                        let message = &body.message()[0];
+                        if message.starts_with(&previous_message) {
+                            let new_chars = message.trim_start_matches(&previous_message);
+                            out.write_all(new_chars.as_bytes()).await?;
+                        } else {
+                            out.write_all(message.as_bytes()).await?;
+                        }
+                        out.flush().await?;
+                        previous_message = message.to_string();
+                    }
+                    resp::PostConvoResponse::Moderation(body) => {
+                        println!("{:?}", body);
+                    }
                 }
-                out.flush().await?;
-                previous_message = message.to_string();
             }
         }
     }

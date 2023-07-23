@@ -6,11 +6,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 <!-- insertion marker -->
-## Unreleased
+## [v0.2.1](https://github.com/gngpp/opengpt/releases/tag/v0.2.1) - 2023-07-21
 
-<small>[Compare with latest](https://github.com/gngpp/opengpt/compare/v0.2.0...HEAD)</small>
+<small>[Compare with v0.2.0](https://github.com/gngpp/opengpt/compare/v0.2.0...v0.2.1)</small>
 
-<!-- insertion marker -->
 ## [v0.2.0](https://github.com/gngpp/opengpt/releases/tag/v0.2.0) - 2023-07-18
 
 <small>[Compare with v0.1.9](https://github.com/gngpp/opengpt/compare/v0.1.9...v0.2.0)</small>

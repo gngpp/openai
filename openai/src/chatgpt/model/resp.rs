@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::chatgpt::Success;
@@ -176,13 +176,13 @@ pub struct PostConvoMetadata {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct PostConvoResponse {
+pub struct ConvoResponse {
     pub message: Message,
     pub conversation_id: String,
     pub error: Option<String>,
 }
 
-impl PostConvoResponse {
+impl ConvoResponse {
     pub fn end_turn(&self) -> Option<bool> {
         self.message.end_turn
     }
@@ -219,6 +219,43 @@ impl PostConvoResponse {
 
     pub fn conversation_id(&self) -> &str {
         &self.conversation_id
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ModerationResponse {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub is_completion: bool,
+}
+
+#[derive(Debug)]
+pub enum PostConvoResponse {
+    Conversation(ConvoResponse),
+    Moderation(ModerationResponse),
+}
+
+impl<'de> Deserialize<'de> for PostConvoResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        if let Some(map) = value.as_object() {
+            if map.contains_key("is_completion")
+                || map.contains_key("message_id")
+                || map.contains_key("moderation_response")
+            {
+                if let Ok(ok) = serde_json::from_value::<ModerationResponse>(value) {
+                    return Ok(PostConvoResponse::Moderation(ok));
+                }
+            } else {
+                if let Ok(ok) = serde_json::from_value::<ConvoResponse>(value) {
+                    return Ok(PostConvoResponse::Conversation(ok));
+                }
+            }
+        }
+        Err(serde::de::Error::custom("deserialization body failed"))
     }
 }
 

@@ -24,14 +24,21 @@ pub(super) struct Opt {
 pub(super) enum ServeSubcommand {
     /// Run the HTTP server
     Run(ServeArgs),
-    /// Start the HTTP server daemon
-    Start,
     /// Stop the HTTP server daemon
+    #[cfg(target_family = "unix")]
     Stop,
+    /// Start the HTTP server daemon
+    #[cfg(target_family = "unix")]
+    Start(ServeArgs),
     /// Restart the HTTP server daemon
-    Restart,
+    #[cfg(target_family = "unix")]
+    Restart(ServeArgs),
     /// Status of the Http server daemon process
+    #[cfg(target_family = "unix")]
     Status,
+    /// Show the Http server daemon log
+    #[cfg(target_family = "unix")]
+    Log,
     /// Generate config template file (toml format file)
     GT {
         /// Overwrite existing configuration file
@@ -43,7 +50,7 @@ pub(super) enum ServeSubcommand {
     },
 }
 
-#[derive(Args, Debug, Serialize, Deserialize)]
+#[derive(Args, Debug, Default, Serialize, Deserialize)]
 pub(super) struct ServeArgs {
     /// Configuration file path (toml format file)
     #[clap(short = 'C', long, env = "OPENGPT_CONFIG", value_parser = parse_config)]

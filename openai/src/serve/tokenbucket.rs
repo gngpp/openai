@@ -26,6 +26,12 @@ pub enum Strategy {
     Redis,
 }
 
+impl Default for Strategy {
+    fn default() -> Self {
+        Self::Mem
+    }
+}
+
 impl std::str::FromStr for Strategy {
     type Err = anyhow::Error;
 

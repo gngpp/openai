@@ -72,13 +72,13 @@ use self::model::{req, resp};
 
 use crate::{HEADER_UA, URL_CHATGPT_API};
 
-pub struct OpenGPT {
+pub struct ChatGPT {
     api_prefix: String,
     client: reqwest::Client,
     access_token: RwLock<String>,
 }
 
-impl OpenGPT {
+impl ChatGPT {
     async fn request<U>(&self, url: String, method: RequestMethod) -> ApiResult<U>
     where
         U: DeserializeOwned,
@@ -220,7 +220,7 @@ impl OpenGPT {
     }
 }
 
-impl OpenGPT {
+impl ChatGPT {
     pub async fn get_models(&self) -> ApiResult<resp::GetModelsResponse> {
         self.request(format!("{}/models", self.api_prefix), RequestMethod::GET)
             .await
@@ -318,7 +318,9 @@ impl OpenGPT {
                                 .map_err(ApiError::SerdeDeserializeError)?;
                             v.push(res);
                         }
-                    } else if body.starts_with("data: [DONE]") {
+                    } else if body.starts_with("data: [DONE]")
+                        || body.starts_with("data: { \"conversation_id\"")
+                    {
                         break;
                     }
                 }
@@ -396,12 +398,18 @@ impl OpenGPT {
 
 pub struct OpenGPTBuilder {
     builder: reqwest::ClientBuilder,
-    opengpt: OpenGPT,
+    api_prefix: String,
+    access_token: RwLock<String>,
 }
 
 impl OpenGPTBuilder {
+    pub fn access_token(mut self, access_token: String) -> Self {
+        self.access_token = RwLock::new(access_token);
+        self
+    }
+
     pub fn api_prefix(mut self, url: String) -> Self {
-        self.opengpt.api_prefix = url;
+        self.api_prefix = url;
         self
     }
 
@@ -430,11 +438,6 @@ impl OpenGPTBuilder {
         self
     }
 
-    pub fn access_token(mut self, access_token: String) -> Self {
-        self.opengpt.access_token = tokio::sync::RwLock::new(access_token);
-        self
-    }
-
     /// Sets the necessary values to mimic the specified Chrome version.
     pub fn chrome_builder(mut self, ver: ChromeVersion) -> Self {
         self.builder = self.builder.chrome_builder(ver);
@@ -447,24 +450,24 @@ impl OpenGPTBuilder {
         self
     }
 
-    pub fn build(mut self) -> OpenGPT {
-        self.opengpt.client = self.builder.build().expect("ClientBuilder::build()");
-        self.opengpt
+    pub fn build(self) -> ChatGPT {
+        ChatGPT {
+            api_prefix: self.api_prefix,
+            client: self.builder.build().expect("ClientBuilder::build()"),
+            access_token: self.access_token,
+        }
     }
 
     pub fn builder() -> OpenGPTBuilder {
-        let client = reqwest::ClientBuilder::new()
+        let builder = reqwest::ClientBuilder::new()
             .user_agent(HEADER_UA)
-            .chrome_builder(browser::ChromeVersion::V108)
+            .chrome_builder(browser::ChromeVersion::V99Android)
             .cookie_store(true);
 
         OpenGPTBuilder {
-            builder: client,
-            opengpt: OpenGPT {
-                api_prefix: format!("{URL_CHATGPT_API}/backend-api"),
-                client: reqwest::Client::new(),
-                access_token: RwLock::default(),
-            },
+            builder,
+            api_prefix: format!("{URL_CHATGPT_API}/backend-api"),
+            access_token: RwLock::default(),
         }
     }
 }

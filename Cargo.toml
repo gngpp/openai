@@ -1,6 +1,6 @@
 [package]
 name = "opengpt"
-version = "0.2.0"
+version = "0.2.3"
 edition = "2021"
 description = "OpenGPT - Not just a unofficial ChatGPT proxy (bypass Cloudflare 403 Access Denied)\nGithub: https://github.com/gngpp/opengpt"
 license = "MIT"
@@ -29,8 +29,15 @@ tui = { version = "0.19.0", default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.26.1", features = [ "serde" ] }
 tui-logger = { version = "0.9.2", default-features = false, features = ["tui"] }
 
+[target.'cfg(target_family = "unix")'.dependencies]
+daemonize = "0.5.0"
+nix = { version = "0.26.2", features = ["signal", "user", "ptrace"]}
+
 [dev-dependencies]
 futures-util = "0.3.27"
+reqwest = { git = "https://github.com/gngpp/reqwest.git", branch ="main", default-features = false, features = [
+    "chrome","json", "cookies", "stream", "multipart", "socks"
+] }
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gngpp/hyper.git", branch = "v0.14.18-patched" }

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  opengpt:
+    image: ghcr.io/gngpp/opengpt:latest
+    container_name: opengpt
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - OPENGPT_CONFIG=/opengpt-serve.toml
+      # - OPENGPT_PORT=8080
+      # - OPENGPT_HOST=0.0.0.0
+      # - OPENGPT_WORKERS=10
+      # - OPENGPT_PROXY=
+      # - OPENGPT_TIMEOUT=360
+      # - OPENGPT_CONNECT_TIMEOUT=60
+      # - OPENGPT_TCP_KEEPALIVE=60
+      # - OPENGPT_TLS_CERT=
+      # - OPENGPT_TLS_KEY=
+      # - OPENGPT_UI_API_PREFIX=
+      # - OPENGPT_SIGNATURE=
+      # - OPENGPT_TB_ENABLE=
+      # - OPENGPT_TB_STORE_STRATEGY
+      # - OPENGPT_TB_REDIS_URL=
+      # - OPENGPT_TB_CAPACITY=
+      # - OPENGPT_TB_FILL_RATE=
+      # - OPENGPT_TB_EXPIRED=
+      # - OPENGPT_CF_SITE_KEY=
+      # - OPENGPT_CF_SECRET_KEY=
+    volumes:
+    #   - ${PWD}/ssl:/etc
+      - ${PWD}/opengpt-serve.toml:/opengpt-serve.toml
+    command: serve run
+    ports:
+      - "7999:7999"
+
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600 --cleanup
+    restart: unless-stopped

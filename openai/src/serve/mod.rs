@@ -5,7 +5,7 @@ pub mod sign;
 pub mod tokenbucket;
 
 #[cfg(feature = "template")]
-pub mod template;
+pub mod ui;
 
 pub mod load_balancer;
 
@@ -17,7 +17,7 @@ use actix_web::{get, post, App, HttpResponse, HttpServer, Responder};
 use actix_web::{web, HttpRequest};
 
 use derive_builder::Builder;
-use reqwest::header::HeaderValue;
+use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::fs::File;
@@ -32,8 +32,8 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use crate::arkose::ArkoseToken;
 use crate::auth::model::AuthAccount;
 use crate::auth::{AuthClient, AuthHandle};
-use crate::serve::template::TemplateData;
 use crate::serve::tokenbucket::TokenBucketContext;
+use crate::serve::ui::TemplateData;
 use crate::{debug, info, warn, HOST_CHATGPT, ORIGIN_CHATGPT};
 
 use crate::{HEADER_UA, URL_CHATGPT_API, URL_PLATFORM_API};
@@ -126,12 +126,20 @@ impl Launcher {
         );
 
         if let Some(url) = &self.api_prefix {
-            info!("Web UI site use api: {url}")
+            info!("WebUI site use api: {url}")
         }
 
         // serve
         let serve = HttpServer::new(move || {
             let app = App::new()
+                .wrap(
+                    actix_cors::Cors::default()
+                        .supports_credentials()
+                        .allow_any_origin()
+                        .allow_any_header()
+                        .allow_any_method()
+                        .max_age(3600),
+                )
                 .wrap(Logger::default())
                 // official dashboard api endpoint
                 .service(
@@ -161,7 +169,7 @@ impl Launcher {
                 // template data
                 .app_data(web::Data::new(template_data.clone()))
                 // templates page endpoint
-                .configure(template::config);
+                .configure(ui::config);
 
             #[cfg(all(not(feature = "sign"), feature = "limit"))]
             {
@@ -390,14 +398,23 @@ fn response_convert(resp: Result<reqwest::Response, reqwest::Error>) -> HttpResp
         Ok(resp) => {
             let status = resp.status();
             let mut builder = HttpResponse::build(status);
-            resp.headers().into_iter().for_each(|kv| {
-                builder.insert_header(kv);
-            });
+            resp.headers()
+                .into_iter()
+                .filter(|(k, _v)| {
+                    let name = k.as_str().to_lowercase();
+                    name.ne("__cf_bm")
+                        || name.ne("__cfduid")
+                        || name.ne("_cfuvid")
+                        || name.ne("set-cookie")
+                })
+                .for_each(|kv| {
+                    builder.insert_header(kv);
+                });
 
             for c in resp
                 .cookies()
                 .into_iter()
-                .filter(|c| c.name().eq("_puid") || c.name().eq("__cf_bm"))
+                .filter(|c| c.name().eq("_puid") || c.name().eq("_account"))
             {
                 if let Some(expires) = c.expires() {
                     let timestamp_nanos = expires
@@ -427,12 +444,17 @@ fn response_convert(resp: Result<reqwest::Response, reqwest::Error>) -> HttpResp
 
 fn header_convert(req: &HttpRequest) -> reqwest::header::HeaderMap {
     let headers = req.headers();
-    let mut res = headers
-        .iter()
-        .filter(|v| v.0.eq(&header::AUTHORIZATION))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect::<reqwest::header::HeaderMap>();
 
+    let authorization = match headers.get(header::AUTHORIZATION) {
+        Some(v) => Some(v),
+        // pandora will pass X-Authorization header
+        None => headers.get("X-Authorization"),
+    };
+
+    let mut res = HeaderMap::new();
+    if let Some(h) = authorization {
+        res.insert(header::AUTHORIZATION, h.clone());
+    }
     res.insert(header::HOST, HeaderValue::from_static(HOST_CHATGPT));
     res.insert(header::ORIGIN, HeaderValue::from_static(ORIGIN_CHATGPT));
     res.insert(header::USER_AGENT, HeaderValue::from_static(HEADER_UA));
@@ -465,12 +487,6 @@ fn header_convert(req: &HttpRequest) -> reqwest::header::HeaderMap {
         let c = &format!("_puid={};", puid_cookie_encoded(cookier.value()));
         cookie.push_str(c);
         debug!("request cookie `puid`: {}", c);
-    }
-
-    if let Some(cookier) = req.cookie("__cf_bm") {
-        let c = &format!("__cf_bm={};", cookier.value());
-        cookie.push_str(c);
-        debug!("request cookie `__cf_bm`: {}", c);
     }
 
     // setting cookie

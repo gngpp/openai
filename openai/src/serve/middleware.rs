@@ -54,7 +54,20 @@ where
     dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
-        let authorization = request.headers().get(header::AUTHORIZATION);
+        let ok = ["/backend-api/public/plugins/by-id"];
+
+        if let Some(_) = ok.iter().find(|v| request.uri().path().contains(*v)) {
+            let svc = self.service.call(request);
+            return Box::pin(async move {
+                // forwarded responses map to "left" body
+                svc.await.map(ServiceResponse::map_into_left_body)
+            });
+        };
+
+        let authorization = match request.headers().get(header::AUTHORIZATION) {
+            Some(v) => Some(v),
+            None => request.headers().get("X-Authorization"),
+        };
 
         let bad_response = |msg: &str, request: ServiceRequest| -> Self::Future {
             let (req, _pl) = request.into_parts();
