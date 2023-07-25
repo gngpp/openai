@@ -31,7 +31,8 @@ pub(super) async fn serve(mut args: ServeArgs, relative_path: bool) -> anyhow::R
         .connect_timeout(args.connect_timeout.max(60))
         .workers(args.workers.max(1))
         .cf_site_key(args.cf_site_key)
-        .cf_secret_key(args.cf_secret_key);
+        .cf_secret_key(args.cf_secret_key)
+        .disable_ui(args.disable_webui);
 
     #[cfg(feature = "limit")]
     let builder = builder

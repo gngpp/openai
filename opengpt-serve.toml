@@ -14,6 +14,7 @@ tb_redis_url=["redis://127.0.0.1:6379"]
 tb_capacity=60
 tb_fill_rate=1
 tb_expired=86400
+disable_webui=false
 #sign_secret_key=
 #cf_site_key=
 #cf_secret_key=

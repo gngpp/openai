@@ -1,4 +1,4 @@
-use reqwest::{browser::ChromeVersion, Client};
+use reqwest::{impersonate::Impersonate, Client};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
@@ -23,7 +23,7 @@ impl<T: Clone> ClientLoadBalancer<T> {
             // auth client
             let auth_client = auth::AuthClientBuilder::builder()
                 .user_agent(HEADER_UA)
-                .chrome_builder(ChromeVersion::V108)
+                .impersonate_builder(Impersonate::OkHttpAndroid13)
                 .timeout(Duration::from_secs((args.timeout + 1) as u64))
                 .connect_timeout(Duration::from_secs((args.connect_timeout + 1) as u64))
                 .pool_max_idle_per_host(args.workers)
@@ -63,7 +63,7 @@ impl<T: Clone> ClientLoadBalancer<T> {
             // api client
             let client = client_builder
                 .user_agent(HEADER_UA)
-                .chrome_builder(ChromeVersion::V110)
+                .impersonate_builder(Impersonate::OkHttpAndroid13)
                 .tcp_keepalive(Some(Duration::from_secs((args.tcp_keepalive + 1) as u64)))
                 .timeout(Duration::from_secs((args.timeout + 1) as u64))
                 .connect_timeout(Duration::from_secs((args.connect_timeout + 1) as u64))

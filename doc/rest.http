@@ -63,6 +63,10 @@ Authorization: {{bearer_session_id}}
 GET http://{{host}}/dashboard/billing/credit_grants
 Authorization: {{bearer_session_id}}
 
+### 
+GET http://{{host}}/v1/dashboard/billing/subscription
+Authorization: {{bearer_session_id}}
+
 /// backend-api ///
 ### get models
 GET http://{{host}}/backend-api/models?history_and_training_disabled=false

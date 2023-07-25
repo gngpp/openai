@@ -61,10 +61,7 @@ pub trait Success {
 
 use std::time::Duration;
 
-use reqwest::{
-    browser::{self, ChromeVersion},
-    Proxy, StatusCode,
-};
+use reqwest::{impersonate::Impersonate, Proxy, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::RwLock;
 
@@ -439,8 +436,8 @@ impl OpenGPTBuilder {
     }
 
     /// Sets the necessary values to mimic the specified Chrome version.
-    pub fn chrome_builder(mut self, ver: ChromeVersion) -> Self {
-        self.builder = self.builder.chrome_builder(ver);
+    pub fn impersonate_builder(mut self, ver: Impersonate) -> Self {
+        self.builder = self.builder.impersonate_builder(ver);
         self
     }
 
@@ -461,7 +458,7 @@ impl OpenGPTBuilder {
     pub fn builder() -> OpenGPTBuilder {
         let builder = reqwest::ClientBuilder::new()
             .user_agent(HEADER_UA)
-            .chrome_builder(browser::ChromeVersion::V99Android)
+            .impersonate_builder(Impersonate::OkHttpAndroid13)
             .cookie_store(true);
 
         OpenGPTBuilder {

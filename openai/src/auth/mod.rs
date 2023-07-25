@@ -9,8 +9,8 @@ use anyhow::{bail, Context};
 use async_recursion::async_recursion;
 use derive_builder::Builder;
 use regex::Regex;
-use reqwest::browser::ChromeVersion;
 use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::impersonate::Impersonate;
 use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -1075,9 +1075,9 @@ impl AuthClientBuilder {
         self
     }
 
-    /// Sets the necessary values to mimic the specified Chrome version.
-    pub fn chrome_builder(mut self, ver: ChromeVersion) -> Self {
-        self.builder = self.builder.chrome_builder(ver);
+    /// Sets the necessary values to mimic the specified impersonate client version.
+    pub fn impersonate_builder(mut self, ver: Impersonate) -> Self {
+        self.builder = self.builder.impersonate_builder(ver);
         self
     }
 
@@ -1110,7 +1110,7 @@ impl AuthClientBuilder {
 
     pub fn builder() -> AuthClientBuilder {
         let client_builder = Client::builder()
-            .chrome_builder(ChromeVersion::V110)
+            .impersonate_builder(Impersonate::OkHttpAndroid13)
             .connect_timeout(Duration::from_secs(30))
             .redirect(Policy::custom(|attempt| {
                 let url = attempt.url().to_string();

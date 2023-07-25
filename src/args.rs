@@ -146,6 +146,10 @@ pub(super) struct ServeArgs {
     /// Cloudflare turnstile captcha secret key
     #[clap(long, env = "OPENGPT_CF_SECRET_KEY", requires = "cf_site_key")]
     pub(super) cf_secret_key: Option<String>,
+
+    /// Disable WebUI
+    #[clap(short = 'D', long, env = "OPENGPT_DISABLE_WEBUI")]
+    pub(super) disable_webui: bool,
 }
 
 #[derive(Subcommand)]
