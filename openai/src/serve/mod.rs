@@ -613,55 +613,55 @@ async fn check_self_ip() {
 
 async fn initialize_puid(email: String, password: String, mfa: Option<String>) {
     let mut interval = tokio::time::interval(Duration::from_secs(24 * 60 * 60)); // 24 hours
-    let account = AuthAccount {
+    let mut account = AuthAccount {
         username: email,
         password,
         mfa,
-        option: AuthStrategy::Web,
+        option: AuthStrategy::Apple,
         cf_turnstile_response: None,
     };
     let env = ENV_HOLDER.get_instance();
     loop {
         interval.tick().await;
-
-        for _ in 0..3 {
+        for _ in 0..2 {
             match env.load_auth_client().do_access_token(&account).await {
-                Ok(v) => match v {
-                    AccessToken::Session(access_token) => {
-                        let res = env
-                            .load_api_client()
-                            .get(format!("{URL_CHATGPT_API}/backend-api/models"))
-                            .bearer_auth(access_token.access_token)
-                            .send()
-                            .await;
-                        match res {
-                            Ok(resp) => match resp.error_for_status() {
-                                Ok(v) => {
-                                    match v.cookies().into_iter().find(|v| v.name().eq("_puid")) {
-                                        Some(cookie) => {
-                                            let puid = cookie.value().to_owned();
-                                            info!("Update PUID: {puid}");
-                                            env.set_share_puid(puid);
-                                            break;
-                                        }
-                                        None => {
-                                            warn!("Your account may not be Plus")
-                                        }
-                                    }
+                Ok(v) => {
+                    let access_token = match v {
+                        AccessToken::Session(access_token) => access_token.access_token,
+                        AccessToken::OAuth(access_token) => access_token.access_token,
+                    };
+                    match env
+                        .load_api_client()
+                        .get(format!("{URL_CHATGPT_API}/backend-api/models"))
+                        .bearer_auth(access_token)
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => match resp.error_for_status() {
+                            Ok(v) => match v.cookies().into_iter().find(|v| v.name().eq("_puid")) {
+                                Some(cookie) => {
+                                    let puid = cookie.value().to_owned();
+                                    info!("Update PUID: {puid}");
+                                    env.set_share_puid(Some(puid));
+                                    break;
                                 }
-                                Err(err) => {
-                                    warn!("failed to get puid error: {}", err)
+                                None => {
+                                    warn!("Your account may not be Plus")
                                 }
                             },
                             Err(err) => {
-                                warn!("Error: {err}")
+                                warn!("failed to get puid error: {}", err)
                             }
+                        },
+                        Err(err) => {
+                            warn!("[{}] Error: {err}", account.option);
+                            env.set_share_puid(None)
                         }
                     }
-                    _ => {}
-                },
+                }
                 Err(err) => {
-                    warn!("login error: {}", err)
+                    warn!("login error: {}", err);
+                    account.option = AuthStrategy::Web
                 }
             }
         }

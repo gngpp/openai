@@ -154,16 +154,66 @@ pub fn parse_config(s: &str) -> anyhow::Result<PathBuf> {
     }
 }
 
+// parse account，support split: ':', '-', '--', '---'....
 pub fn parse_puid_user(s: &str) -> anyhow::Result<(String, String, Option<String>)> {
-    let parts: Vec<&str> = s.split(':').collect();
-
-    match parts.len() {
-        2 => Ok((parts[0].to_string(), parts[1].to_string(), None)),
-        3 => Ok((
-            parts[0].to_string(),
-            parts[1].to_string(),
-            Some(parts[2].to_string()),
-        )),
-        _ => anyhow::bail!("Input format is invalid!"),
+    #[inline]
+    fn handle_parts(mut parts: Vec<String>) -> anyhow::Result<(String, String, Option<String>)> {
+        parts.reverse();
+        match parts.len() {
+            2 => Ok((parts.pop().unwrap(), parts.pop().unwrap(), None)),
+            3 => Ok((parts.pop().unwrap(), parts.pop().unwrap(), parts.pop())),
+            _ => anyhow::bail!("Input format is invalid!"),
+        }
     }
+
+    if s.contains(":") {
+        let parts = s
+            .split(":")
+            .map(|part| part.to_string())
+            .collect::<Vec<_>>();
+        return handle_parts(parts);
+    }
+
+    match find_single_consecutive_dashes(s, '-') {
+        Ok(targets) => {
+            let parts = s
+                .split(&targets)
+                .map(|part| part.to_string())
+                .collect::<Vec<_>>();
+            return handle_parts(parts);
+        }
+        Err(_) => anyhow::bail!("Input format is invalid!"),
+    }
+}
+
+fn find_single_consecutive_dashes(s: &str, target: char) -> Result<String, &'static str> {
+    let mut count = 0;
+    let mut dashes = String::new();
+    let mut found = None;
+
+    for c in s.chars() {
+        if c == target {
+            count += 1;
+            dashes.push(target);
+        } else {
+            if count > 0 {
+                if found.is_some() {
+                    return Err("Found more than one group of consecutive dashes");
+                }
+                found = Some(dashes.clone());
+            }
+            count = 0;
+            dashes.clear();
+        }
+    }
+
+    // Check at the end, in case the string ends with consecutive
+    if count > 0 {
+        if found.is_some() {
+            return Err("Found more than one group of consecutive dashes");
+        }
+        found = Some(dashes);
+    }
+
+    found.ok_or("No consecutive dashes found")
 }

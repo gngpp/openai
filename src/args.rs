@@ -88,7 +88,7 @@ pub(super) struct ServeArgs {
     /// PUID cookie value of Plus account
     #[clap(long, env = "OPENGPT_PUID")]
     pub(super) puid: Option<String>,
-    /// Obtain the PUID of the Plus account user, Example: `user:pass` or `user:pass:mfa`
+    /// Obtain the PUID of the Plus account user. Supports split: ':', '-', '--' ... , Example: `user:pass` or `user:pass:mfa`
     #[clap(long, env = "OPENGPT_PUID_USER", value_parser = util::parse_puid_user)]
     pub(super) puid_user: Option<(String, String, Option<String>)>,
     /// Web UI api prefix

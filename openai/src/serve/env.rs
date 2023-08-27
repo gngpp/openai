@@ -53,9 +53,9 @@ impl Env {
         lock.clone()
     }
 
-    pub fn set_share_puid(&self, puid: String) {
+    pub fn set_share_puid(&self, puid: Option<String>) {
         let mut lock = self.share_puid.write().unwrap();
-        *lock = Some(puid);
+        *lock = puid;
     }
 }
 
