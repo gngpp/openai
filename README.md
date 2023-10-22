@@ -116,7 +116,7 @@ opkg install luci-i18n-ninja-zh-cn_1.1.3-1_all.ipk
 docker run --rm -it -p 7999:7999 --name=ninja \
   -e WORKERS=1 \
   -e LOG=info \
-  gngpp/ninja:latest run
+  gngpp/ninja:latest serve run
 ```
 
 - Docker Compose
@@ -142,7 +142,7 @@ services:
     # volumes:
       # - ${PWD}/ssl:/etc
       # - ${PWD}/serve.toml:/serve.toml
-    command: run
+    command: serve run
     ports:
       - "8080:7999"
     depends_on:
