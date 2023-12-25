@@ -26,7 +26,7 @@ inquire = { version = "0.6.2", optional =  true }
 colored_json = { version = "4.0.0", optional = true }
 indicatif = { version = "0.17.6", optional = true }
 json_to_table = { version = "0.7.0", optional = true }
-tabled = { version = "0.12.2", optional = true }
+tabled = { version = "0.15.0", optional = true }
 self_update = { version = "0.39.0", default-features = false, features = ["rustls", "archive-tar", "compression-flate2"] }
 reqwest = { package = "reqwest-impersonate", version ="0.11.46", default-features = false, features = ["impersonate"] }
 
