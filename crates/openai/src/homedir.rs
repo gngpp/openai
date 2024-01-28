@@ -19,7 +19,7 @@ mod home_dir_windows {
     ///
     /// ```
     /// //  "C:\Users\USER"
-    /// let path = simple_home_dir::home_dir().unwrap();
+    /// let path = home_dir::home_dir().unwrap();
     /// ```
     pub fn home_dir() -> Option<PathBuf> {
         let mut path_ptr = null_mut();
@@ -42,9 +42,14 @@ mod home_dir_ne_windows {
     ///
     /// ```
     /// //  "/home/USER"
-    /// let path = simple_home_dir::home_dir().unwrap();
+    /// let path = home_dir::home_dir().unwrap();
     /// ```
     pub fn home_dir() -> Option<PathBuf> {
+        if let Ok(user) = std::env::var("SUDO_USER") {
+            if let Ok(Some(real_user)) = nix::unistd::User::from_name(&user) {
+                return Some(real_user.dir);
+            }
+        }
         var_os(HOME).map(Into::into)
     }
 }

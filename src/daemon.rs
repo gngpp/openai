@@ -154,10 +154,12 @@ pub(super) fn serve_start(mut args: ServeArgs) -> anyhow::Result<()> {
         .stderr(stderr) // Redirect stderr to `/tmp/daemon.err`.
         .privileged_action(|| "Executed before drop privileges");
 
-    if let Ok(Some(real_user)) = nix::unistd::User::from_name("root") {
-        daemonize = daemonize
-            .user(real_user.name.as_str())
-            .group(real_user.gid.as_raw());
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        if let Ok(Some(real_user)) = nix::unistd::User::from_name(&user) {
+            daemonize = daemonize
+                .user(real_user.name.as_str())
+                .group(real_user.gid.as_raw());
+        }
     }
 
     fix_relative_path(&mut args);
