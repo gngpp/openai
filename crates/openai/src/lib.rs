@@ -23,8 +23,8 @@ pub mod uuid;
 use std::time::Duration;
 
 pub const LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const URL_CHATGPT_API: &str = "https://chat.openai.com";
-pub const URL_PLATFORM_API: &str = "https://api.openai.com";
+pub const URL_CHATGPT_API: &str = "https://oai-proxy.cloud.sealos.io/https://chat.openai.com";
+pub const URL_PLATFORM_API: &str = "https://oai-proxy.cloud.sealos.io/https://api.openai.com";
 
 pub fn now_duration() -> anyhow::Result<Duration> {
     let now = std::time::SystemTime::now();

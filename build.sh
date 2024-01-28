@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 if [ -n "$GIT_TOKEN" ]; then
     if [ -d "patches" ]; then
@@ -23,7 +23,7 @@ root=$(pwd)
 
 # Separate arrays for target architectures and Docker images
 target_architectures=("x86_64-unknown-linux-musl" "aarch64-unknown-linux-musl" "armv7-unknown-linux-musleabi" "armv7-unknown-linux-musleabihf" "arm-unknown-linux-musleabi" "arm-unknown-linux-musleabihf" "armv5te-unknown-linux-musleabi" "i686-unknown-linux-gnu" "i586-unknown-linux-gnu" "x86_64-pc-windows-msvc")
-docker_images=("ghcr.io/gngpp/rust-musl-cross:x86_64-musl" "ghcr.io/gngpp/rust-musl-cross:aarch64-musl" "ghcr.io/gngpp/rust-musl-cross:armv7-musleabi" "ghcr.io/gngpp/rust-musl-cross:armv7-musleabihf" "ghcr.io/gngpp/rust-musl-cross:arm-musleabi" "ghcr.io/gngpp/rust-musl-cross:arm-musleabihf" "ghcr.io/gngpp/rust-musl-cross:armv5te-musleabi" "ghcr.io/gngpp/rust-musl-cross:i686-musl" "ghcr.io/gngpp/rust-musl-cross:i586-musl" "ghcr.io/gngpp/cargo-xwin:latest")
+docker_images=("getsentry/rust-musl-cross:x86_64-musl" "ghcr.io/gngpp/rust-musl-cross:aarch64-musl" "ghcr.io/gngpp/rust-musl-cross:armv7-musleabi" "ghcr.io/gngpp/rust-musl-cross:armv7-musleabihf" "ghcr.io/gngpp/rust-musl-cross:arm-musleabi" "ghcr.io/gngpp/rust-musl-cross:arm-musleabihf" "ghcr.io/gngpp/rust-musl-cross:armv5te-musleabi" "ghcr.io/gngpp/rust-musl-cross:i686-musl" "ghcr.io/gngpp/rust-musl-cross:i586-musl" "ghcr.io/gngpp/cargo-xwin:latest")
 
 get_docker_image() {
     local target_arch="$1"
