@@ -70,6 +70,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"], optional =
 async-stream = { version = "0.3.5", optional = true }
 axum_csrf = { version = "0.8.0", features = ["layer"], optional = true }
 serde_urlencoded = { version = "0.7.1", optional = true }
+lazy_static = "1.4.0"
 
 [target.'cfg(target_family = "unix")'.dependencies]
 nix = { version = "0.27.1", default-features = false, features = ["user"] }

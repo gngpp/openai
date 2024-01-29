@@ -92,6 +92,116 @@ pub(crate) async fn response_convert(
             .body(StreamBody::new(Body::from(json_bytes)))
             .map_err(ResponseError::InternalServerError)?
             .into_response())
+    } else if resp.inner.url().path().contains("fc/gt2/public_key") {
+        // Files endpoint handling
+        let mut json = resp
+            .inner
+            .json::<Value>()
+            .await
+            .map_err(ResponseError::BadRequest)?;
+
+        if let Some(download_upload_url) = json.get_mut("challenge_url_cdn") {
+            if let Some(download_url_str) = download_upload_url.as_str() {
+                const FILES_ENDPOINT: &str = "https://tcr9i.chat.openai.com/";
+                if download_url_str.starts_with(FILES_ENDPOINT) {
+                    *download_upload_url =
+                        serde_json::json!(download_url_str.replace(FILES_ENDPOINT, "/"));
+                }
+            }
+        }
+
+        if let Some(token) = json.get_mut("token") {
+            if let Some(token_str) = token.as_str() {
+                *token = serde_json::json!(token_str.replace("at=40|ag=101", "at=40|sup=1|rid=52|ag=101"));
+                // const FILES_ENDPOINT: &str = "https://tcr9i.chat.openai.com/";
+                // if download_url_str.starts_with(FILES_ENDPOINT) {
+                //     *download_upload_url =
+                //         serde_json::json!(download_url_str.replace(FILES_ENDPOINT, "/"));
+                // }
+                let token_str=token.as_str().unwrap();
+                *token = serde_json::json!(token_str.replace("tcr9i.chat.openai.com", "client-api.arkoselabs.com"));
+
+            }
+        }
+
+        let json_bytes = serde_json::to_vec(&json)?;
+        Ok(builder
+            .body(StreamBody::new(Body::from(json_bytes)))
+            .map_err(ResponseError::InternalServerError)?
+            .into_response())
+    } else if resp.inner.url().path().contains("game_core_bootstrap.js") {
+        print!("game_core_bootstrap.js");
+        // http://192.168.252.128:7999/cdn/fc/assets/ec-game-core/bootstrap/1.18.0/standard/game_core_bootstrap.js
+        // u("".concat(g(x), "/fc/").concat(t.f.ANALYTICS), {
+        // u("".concat(window.origin, "/fc/").concat(t.f.ANALYTICS), {
+        let mut body = resp.inner.text().await.map_err(ResponseError::BadRequest)?;
+        const TARGET: &str = r#"u("".concat(g(x),"/fc/").concat(t.f.ANALYTICS)"#;
+        const REPLACEMENT: &str = r#"u("".concat(window.origin,"/fc/").concat(t.f.ANALYTICS)"#;
+        if body.contains(TARGET) {
+            body = body.replace(TARGET, REPLACEMENT);
+        }
+        Ok(builder
+            .body(StreamBody::new(Body::from(body)))
+            .map_err(ResponseError::InternalServerError)?
+            .into_response())
+    } else if resp
+        .inner
+        .url()
+        .path()
+        .contains("ec-game-core/bootstrap/1.18.0/standard/sri.json")
+    {
+        print!("sri.json");
+        let mut body = resp.inner.text().await.map_err(ResponseError::BadRequest)?;
+        const TARGET: &str =
+            r#"sha384-jb6MvhwzbHyUsRRonN5UHg/rGm2Pn2L8ePRzyTc8nUqzJv/oc2NNJmOfjF81c5yG"#;
+        const REPLACEMENT: &str =
+            r#"sha384-6YfRrK+HT8C+OXv1Su9lyivH6T5qMbaBEPQTebJbBu4S7WbMsnRittQJgNn3KFsq"#;
+        if body.contains(TARGET) {
+            body = body.replace(TARGET, REPLACEMENT);
+        }
+        Ok(builder
+            .body(StreamBody::new(Body::from(body)))
+            .map_err(ResponseError::InternalServerError)?
+            .into_response())
+    } else if resp
+        .inner
+        .url()
+        .path()
+        .contains("v2/2.3.4/enforcement.c70df15cb97792b18c2f4978b68954a0.html")
+    {
+        Ok(builder
+                .body(StreamBody::new(Body::from(r#"<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="style-src 'self' 'nonce-CZQ6o0B9znpEszouyF9InPmzND5ldwvtPGiu'; default-src 'self' data: *.arkoselabs.com *.funcaptcha.com *.arkoselabs.cn *.arkose.com.cn;">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <style nonce="CZQ6o0B9znpEszouyF9InPmzND5ldwvtPGiu">
+            html, body {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            #app {
+                height: 100%;
+                overflow: hidden;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script type="text/javascript" id="enforcementScript" src="enforcement.c70df15cb97792b18c2f4978b68954a0.js" crossorigin="anonymous" integrity="sha384-MrEVYBkrhJXI5+vVQ013Z0iX2Y0HznYzq3M607WsjLNJJ9e+KyOt9Y3amdoCm3Lm" data-nonce="CZQ6o0B9znpEszouyF9InPmzND5ldwvtPGiu"></script>
+    </body>
+</html>
+"#)))
+                .map_err(ResponseError::InternalServerError)?
+                .into_response())
     } else {
         // Non-files endpoint handling
         Ok(builder

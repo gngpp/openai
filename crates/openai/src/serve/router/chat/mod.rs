@@ -72,7 +72,7 @@ const TEMP_CHAT: &str = "chat.htm";
 const TEMP_DETAIL: &str = "detail.htm";
 const TEMP_LOGIN: &str = "login.htm";
 const TEMP_SHARE: &str = "share.htm";
-
+const TEMP_GPTS: &str = "gpts.htm";
 static TEMPLATE: OnceLock<tera::Tera> = OnceLock::new();
 
 // this function could be located in a different module
@@ -616,6 +616,7 @@ fn render_template(name: &str, context: &tera::Context) -> Result<Response<Body>
                 (TEMP_CHAT, include_str!("../../../../frontend/chat.htm")),
                 (TEMP_DETAIL, include_str!("../../../../frontend/detail.htm")),
                 (TEMP_SHARE, include_str!("../../../../frontend/share.htm")),
+                (TEMP_GPTS, include_str!("../../../../frontend/gpts.htm")),
             ])
             .expect("The static template failed to load");
             tera

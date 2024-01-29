@@ -32,7 +32,7 @@ pub async fn start_challenge(ctx: &ArkoseSolverContext) -> FunResult<Session> {
 
     let referer = format!(
         "{}/fc/assets/ec-game-core/game-core/1.18.0/standard/index.html?session={}",
-        ctx.typed.origin_url(),
+        "https://client-api.arkoselabs.com",
         value.replace("|", "&")
     );
     let mut headers = header::HeaderMap::new();
@@ -87,7 +87,6 @@ pub async fn start_challenge(ctx: &ArkoseSolverContext) -> FunResult<Session> {
         .collect::<Vec<FunCaptcha>>();
 
     session.funcaptcha = Some(Arc::new(funcaptcha_list));
-
     Ok(session)
 }
 
@@ -110,7 +109,7 @@ impl Session {
             .client
             .get(format!(
                 "{}/fc/gc/?token={}",
-                self.origin, self.session_token
+                "https://client-api.arkoselabs.com", self.session_token
             ))
             .send()
             .await?

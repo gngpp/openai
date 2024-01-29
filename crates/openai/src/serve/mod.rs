@@ -197,7 +197,11 @@ impl Serve {
             },
             &self.0,
         )
-        .layer(global_layer);
+        .layer(global_layer)            
+        .route("/v2/*path", any(v2_proxy))
+        .route("/fc/*path", any(fc_proxy))
+        .route("/cdn/fc/*path", any(cdn_fc_proxy))
+        ;
 
         // Signal the server to shutdown using Handle.
         let handle = Handle::new();
@@ -419,10 +423,38 @@ async fn official_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseEr
     response_convert(resp).await
 }
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref A: String = std::env::var("URL_CHATGPT_API").unwrap_or_else(|_| String::from("https://oai-proxy.cloud.sealos.io/https://chat.openai.com"));
+}
+
 /// reference: doc/http.rest
 async fn unofficial_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-        .send_request(URL_CHATGPT_API, req)
+    .send_request(A.as_str(), req)
+    .await?;
+    response_convert(resp).await
+}
+
+async fn v2_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+        .send_request("https://oai-proxy.cloud.sealos.io/https://client-api.arkosetoken.com", req)
+        .await?;
+    response_convert(resp).await
+}
+
+
+async fn fc_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+        .send_request("https://oai-proxy.cloud.sealos.io/https://client-api.arkoselabs.com", req)
+        .await?;
+    response_convert(resp).await
+}
+
+async fn cdn_fc_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+        .send_request("https://oai-proxy.cloud.sealos.io/https://client-api.arkoselabs.com", req)
         .await?;
     response_convert(resp).await
 }
