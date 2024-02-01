@@ -56,10 +56,86 @@ pub fn chat_props(s: &Session, query: Query<HashMap<String, String>>) -> Value {
         "page": "/[[...default]]",
         "query": query.0,
         "buildId": BUILD_ID,
-        "assetPrefix": "https://cdn.oaistatic.com",
+        "assetPrefix": "",
         "isFallback": false,
         "gssp": true,
         "scriptLoader": []
+    })
+}
+
+pub fn gpt_props(s: &Session, query: Query<HashMap<String, String>>) -> Value {
+    serde_json::json!({
+        "props": {
+            "pageProps": {
+                "user": {
+                    "id": s.user_id,
+                    "name": s.email,
+                    "email": s.email,
+                    "image": null,
+                    "picture": null,
+                    "groups": [],
+                },
+                "serviceStatus": {},
+                "userCountry": "US",
+                "geoOk": true,
+                "serviceAnnouncement": {
+                    "paid": {},
+                    "public": {}
+                },
+                "isUserInCanPayGroup": true,
+                "gizmo": null,
+                "kind": "chat_page",
+                "serverPrimedAllowBrowserStorageValue": true,
+            },
+            "__N_SSP": true
+        },
+        "page": "/g/[gizmoId]",
+        "query":  query.0 ,
+        "buildId": BUILD_ID,
+        "assetPrefix": "",
+        "isFallback": false,
+        "gssp": true,
+        "scriptLoader": []
+    })
+}
+
+pub fn gpts_props(s: &Session, query: Query<HashMap<String, String>>) -> Value {
+    serde_json::json!({
+        "assetPrefix": "",
+        "buildId": BUILD_ID,
+        "gssp": true,
+        "isFallback": false,
+        "page": "/gpts",
+        "props": {
+            "__N_SSP": true,
+            "pageProps": {
+                "ageVerificationDeadline": null,
+                "canManageBrowserStorage": false,
+                "serverPrimedAllowBrowserStorageValue": true,
+                "serviceAnnouncement": {
+                    "paid": {
+                    },
+                    "public": {
+                    }
+                },
+                "serviceStatus": {
+                },
+                "showCookieConsentBanner": false,
+                "user": {
+                    "id": s.user_id,
+                    "name": s.email,
+                    "email": s.email,
+                    "image": null,
+                    "picture": null,
+                    "groups": [],
+                },
+                "userCountry": "US"
+            }
+        },
+        "query": {
+        },
+        "scriptLoader": [
+        ]
     })
 }
 

@@ -55,7 +55,7 @@ impl AuthClient {
     pub async fn refresh_session(&self, session: &str) -> AuthResult<model::AccessToken> {
         let resp = self
             .inner
-            .get(format!("{URL_CHATGPT_API}/api/auth/session"))
+            .get(format!("{}/api/auth/session",URL_CHATGPT_API.as_str()))
             .header(
                 header::COOKIE,
                 format!("{API_AUTH_SESSION_COOKIE_KEY}={session};"),

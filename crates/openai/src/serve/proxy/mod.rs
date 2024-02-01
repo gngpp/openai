@@ -79,6 +79,9 @@ pub(crate) fn header_convert(
     h.get(header::AUTHORIZATION)
         .map(|h| headers.insert(header::AUTHORIZATION, h.clone()));
 
+    h.get(header::COOKIE)
+        .map(|h| headers.insert(header::COOKIE, h.clone()));
+
     h.get(header::CONTENT_TYPE)
         .map(|h| headers.insert(header::CONTENT_TYPE, h.clone()));
 

@@ -23,7 +23,7 @@ impl WebAuthProvider {
     async fn csrf_token(&self, ctx: &mut RequestContext<'_>) -> AuthResult<()> {
         let resp = self
             .0
-            .get(format!("{URL_CHATGPT_API}/api/auth/csrf"))
+            .get(format!("{}/api/auth/csrf",URL_CHATGPT_API.as_str()))
             .send()
             .await
             .map_err(AuthError::FailedRequest)?
@@ -51,7 +51,7 @@ impl WebAuthProvider {
         let resp = self
             .0
             .post(format!(
-                "{URL_CHATGPT_API}/api/auth/signin/auth0?prompt=login"
+                "{}/api/auth/signin/auth0?prompt=login",URL_CHATGPT_API.as_str(),
             ))
             .ext_context(ctx)
             .form(
@@ -277,7 +277,7 @@ impl WebAuthProvider {
     ) -> AuthResult<model::AccessToken> {
         let resp = self
             .0
-            .get(format!("{URL_CHATGPT_API}/api/auth/session"))
+            .get(format!("{}/api/auth/session",URL_CHATGPT_API.as_str()))
             .ext_context(ctx)
             .send()
             .await

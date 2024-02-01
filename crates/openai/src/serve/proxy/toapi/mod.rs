@@ -137,8 +137,8 @@ pub(super) async fn send_request(req: RequestExt) -> Result<ResponseExt, Respons
         .build();
 
     let mut builder = client
-        .post(format!("{URL_CHATGPT_API}/backend-api/conversation"))
-        .headers(header_convert(&req.headers, &req.jar, URL_CHATGPT_API)?);
+        .post(format!("{}/backend-api/conversation",URL_CHATGPT_API.as_str()))
+        .headers(header_convert(&req.headers, &req.jar, &URL_CHATGPT_API)?);
 
     // Try to get puid from cache
     let puid = get_or_init(baerer, &body.model, cache_id).await?;

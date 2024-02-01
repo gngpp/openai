@@ -39,8 +39,9 @@ use crate::proxy::{InnerProxy, Proxy};
 use crate::serve::error::ProxyError;
 use crate::serve::error::ResponseError;
 use crate::serve::middleware::tokenbucket::{Strategy, TokenBucketLimitContext};
+use crate::NEXT_DATA_ENDPOINT;
 use crate::{info, warn, with_context};
-use crate::{URL_CHATGPT_API, URL_PLATFORM_API};
+use crate::{URL_CHATGPT_API, URL_PLATFORM_API,NINJA_API_ENDPOINT,STATIC_CDN_PROXY};
 use axum::http::header;
 use axum_extra::extract::cookie;
 use axum_server::tls_rustls::RustlsConfig;
@@ -176,17 +177,17 @@ impl Serve {
         };
 
         let router = Router::new()
-            .route("/dashboard/*path", any(official_proxy))
-            .route("/v1/*path", any(official_proxy))
-            .route("/backend-api/*path", any(unofficial_proxy))
+            .route("/dashboard/*path", any(ninja_proxy))
+            .route("/v1/*path", any(ninja_proxy))
+            .route("/backend-api/*path", any(chat_api_proxy))
             .route_layer(app_layer)
-            .route("/public-api/*path", any(unofficial_proxy))
-            .route("/auth/token", post(post_access_token))
-            .route("/auth/refresh_token", post(post_refresh_token))
-            .route("/auth/revoke_token", post(post_revoke_token))
-            .route("/auth/refresh_session", post(post_refresh_session))
-            .route("/auth/sess_token", post(post_sess_token))
-            .route("/auth/billing", post(post_billing));
+            .route("/public-api/*path", any(next_data_proxy))
+            .route("/auth/token", post(ninja_proxy))
+            .route("/auth/refresh_token", post(ninja_proxy))
+            .route("/auth/revoke_token", post(ninja_proxy))
+            .route("/auth/refresh_session", post(ninja_proxy))
+            .route("/auth/sess_token", post(ninja_proxy))
+            .route("/auth/billing", post(ninja_proxy));
 
         let router = router::config(
             // Enable arkose token endpoint proxy
@@ -201,6 +202,13 @@ impl Serve {
         .route("/v2/*path", any(v2_proxy))
         .route("/fc/*path", any(fc_proxy))
         .route("/cdn/fc/*path", any(cdn_fc_proxy))
+        .route(
+            &format!("/_next/data/*path"),
+            any(next_data_proxy),
+        )
+        .route("/_next/static/*path", get(static_proxy))
+        .route("/auth", any(ninja_proxy))
+        .route("/auth/login", any(ninja_proxy))
         ;
 
         // Signal the server to shutdown using Handle.
@@ -418,28 +426,43 @@ async fn get_arkose_token(
 /// reference: https://platform.openai.com/docs/api-reference
 async fn official_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-        .send_request(URL_PLATFORM_API, req)
+        .send_request(&URL_PLATFORM_API, req)
         .await?;
     response_convert(resp).await
 }
 
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref A: String = std::env::var("URL_CHATGPT_API").unwrap_or_else(|_| String::from("https://oai-proxy.cloud.sealos.io/https://chat.openai.com"));
+async fn ninja_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+        .send_request(&NINJA_API_ENDPOINT, req)
+        .await?;
+    response_convert(resp).await
 }
 
 /// reference: doc/http.rest
-async fn unofficial_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+async fn chat_api_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-    .send_request(A.as_str(), req)
+    .send_request(&URL_CHATGPT_API.as_str(), req)
+    .await?;
+    response_convert(resp).await
+}
+
+async fn next_data_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+    .send_request(&NEXT_DATA_ENDPOINT.as_str(), req)
+    .await?;
+    response_convert(resp).await
+}
+
+async fn static_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
+    let resp = with_context!(api_client)
+    .send_request(&STATIC_CDN_PROXY.as_str(), req)
     .await?;
     response_convert(resp).await
 }
 
 async fn v2_proxy(req: RequestExt) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-        .send_request("https://oai-proxy.cloud.sealos.io/https://client-api.arkosetoken.com", req)
+        .send_request("https://oai-proxy.cloud.sealos.io/https://tcr9i.closeai.biz", req)
         .await?;
     response_convert(resp).await
 }

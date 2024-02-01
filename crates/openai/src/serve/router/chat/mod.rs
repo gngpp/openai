@@ -65,7 +65,7 @@ const LOGIN_INDEX: &str = "/auth/login";
 const SESSION_ID: &str = "session";
 const SESSION_TOKEN_ID: &str = "session_token";
 const PUID_ID: &str = "_puid";
-const BUILD_ID: &str = "eFlZtDCQUjuHAccnRY3au";
+const BUILD_ID: &str = "3Frj0dWPrnm3c4KeyI6Zl";
 const TEMP_404: &str = "404.htm";
 const TEMP_AUTH: &str = "auth.htm";
 const TEMP_CHAT: &str = "chat.htm";
@@ -73,6 +73,8 @@ const TEMP_DETAIL: &str = "detail.htm";
 const TEMP_LOGIN: &str = "login.htm";
 const TEMP_SHARE: &str = "share.htm";
 const TEMP_GPTS: &str = "gpts.htm";
+const TEMP_G: &str = "g.htm";
+
 static TEMPLATE: OnceLock<tera::Tera> = OnceLock::new();
 
 // this function could be located in a different module
@@ -95,49 +97,25 @@ pub(super) fn config(router: Router, args: &Args) -> Router {
 
     // Configure the UI routing
     router
-        .route("/auth/login", get(login_index))
-        .route(
-            "/auth/login",
-            post(login).layer(
-                ServiceBuilder::new()
-                    .map_request_body(body::boxed)
-                    .layer(middleware::from_fn(csrf::csrf_middleware)),
-            ),
-        )
         .layer(CsrfLayer::new(config))
         .route("/auth/login/token", post(login_token))
         .route("/auth/logout", get(logout))
         .route("/auth/session", get(session))
+        .route("/api/auth/session", get(session))
         .route("/auth/me", get(auth_me))
+        .route("/backend-api/me", get(auth_me))
         .route("/", get(chat))
         .route("/c", get(chat))
         .route("/c/:conversation_id", get(chat))
+        .route("/gpts", get(gpts))
+        .route("/g/:gizmo_id", get(g_chat))
         .route("/chat", any(redirect_to_home))
         .route("/chat/:conversation_id", any(redirect_to_home))
         .route("/share/e/:share_id", get(share_chat))
         .route("/share/:share_id", get(share_chat))
         .route("/share/:share_id/continue", get(share_chat_continue))
-        .route(
-            &format!("/_next/data/{BUILD_ID}/index.json"),
-            get(chat_info),
-        )
-        .route(
-            // {conversation_id}.json
-            &format!("/_next/data/{BUILD_ID}/c/:conversation_id"),
-            get(chat_info),
-        )
-        .route(
-            // {share_id}.json
-            &format!("/_next/data/{BUILD_ID}/share/:share_id"),
-            get(share_chat_info),
-        )
-        .route(
-            &format!("/_next/data/{BUILD_ID}/share/:share_id/continue.json"),
-            get(share_chat_continue_info),
-        )
-        // static resource endpoints
         .route("/resources/*path", get(get_static_resource))
-        .route("/_next/static/*path", get(get_static_resource))
+        // .route("/_next/static/*path", get(get_static_resource))
         .route("/fonts/*path", get(get_static_resource))
         .route("/ulp/*path", get(get_static_resource))
         .route("/sweetalert2/*path", get(get_static_resource))
@@ -381,8 +359,8 @@ fn create_response_from_session(s: Session) -> Result<Response<Body>, ResponseEr
 /// Get auth me
 async fn auth_me(headers: HeaderMap, jar: CookieJar) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-        .get(format!("{URL_CHATGPT_API}/backend-api/me"))
-        .headers(header_convert(&headers, &jar, URL_CHATGPT_API)?)
+        .get(format!("{}/backend-api/me",URL_CHATGPT_API.as_str()))
+        .headers(header_convert(&headers, &jar, &URL_CHATGPT_API)?)
         .send()
         .await
         .map_err(ResponseError::InternalServerError)?;
@@ -432,6 +410,38 @@ async fn chat(
     return render_template(template_name, &ctx);
 }
 
+/// gpts store
+async fn gpts(
+    query: Query<HashMap<String, String>>,
+    s: SessionExt,
+) -> Result<Response<Body>, ResponseError> {
+    let template_name = TEMP_GPTS;
+    let props = props::gpts_props(&s.session, query).to_string();
+    let mut ctx = tera::Context::new();
+    ctx.insert("props", &props);
+    settings_template_data(&mut ctx);
+    return render_template(template_name, &ctx);
+}
+
+async fn g_chat(
+    gizmo_id: Option<Path<String>>,
+    mut query: Query<HashMap<String, String>>,
+    s: SessionExt,
+) -> Result<Response<Body>, ResponseError> {
+    let template_name = match gizmo_id {
+        Some(gizmo_id) => {
+            query.insert( "gizmoId".to_string(),format!("{}", gizmo_id.0));
+            TEMP_G
+        }
+        None => TEMP_G,
+    };
+    let props = props::gpt_props(&s.session, query).to_string();
+    let mut ctx = tera::Context::new();
+    ctx.insert("props", &props);
+    settings_template_data(&mut ctx);
+    return render_template(template_name, &ctx);
+}
+
 /// Get conversation chat info
 async fn chat_info(s: SessionExt) -> Result<Response<Body>, ResponseError> {
     let props = props::chat_info_props(&s.session);
@@ -447,13 +457,15 @@ async fn share_chat(
     share_id: Path<String>,
     extract: SessionExt,
 ) -> Result<Response<Body>, ResponseError> {
+    let url_chatgpt_api = URL_CHATGPT_API.clone();
     let share_id = share_id.0;
+    let url = format!("{}/backend-api/share/{}", url_chatgpt_api, share_id);
     let resp = with_context!(api_client)
-        .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
+        .get(url)
         .headers(header_convert(
             &extract.headers,
             &extract.jar,
-            URL_CHATGPT_API,
+            &URL_CHATGPT_API,
         )?)
         .send()
         .await
@@ -494,11 +506,11 @@ async fn share_chat_info(
 ) -> Result<Response<Body>, ResponseError> {
     let share_id = share_id.0.replace(".json", EMPTY);
     let resp = with_context!(api_client)
-        .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
+        .get(format!("{}/backend-api/share/{}",URL_CHATGPT_API.as_str(),share_id))
         .headers(header_convert(
             &extract.headers,
             &extract.jar,
-            URL_CHATGPT_API,
+            &URL_CHATGPT_API,
         )?)
         .send()
         .await
@@ -549,10 +561,10 @@ async fn share_chat_continue_info(
 ) -> Result<Response<Body>, ResponseError> {
     let resp = with_context!(api_client)
         .get(format!(
-            "{URL_CHATGPT_API}/backend-api/share/{}",
+            "{}/backend-api/share/{}",URL_CHATGPT_API.as_str(),
             share_id.0
         ))
-        .headers(header_convert(&s.headers, &s.jar, URL_CHATGPT_API)?)
+        .headers(header_convert(&s.headers, &s.jar, &URL_CHATGPT_API)?)
         .send()
         .await
         .map_err(ResponseError::InternalServerError)?;
@@ -617,6 +629,7 @@ fn render_template(name: &str, context: &tera::Context) -> Result<Response<Body>
                 (TEMP_DETAIL, include_str!("../../../../frontend/detail.htm")),
                 (TEMP_SHARE, include_str!("../../../../frontend/share.htm")),
                 (TEMP_GPTS, include_str!("../../../../frontend/gpts.htm")),
+                (TEMP_G, include_str!("../../../../frontend/g.htm")),
             ])
             .expect("The static template failed to load");
             tera
