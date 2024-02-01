@@ -5,7 +5,10 @@ pub mod web;
 
 use std::collections::HashSet;
 
-use crate::arkose::{self, ArkoseContext, ArkoseToken, Type};
+use crate::{
+    arkose::{self, ArkoseContext, ArkoseToken, Type},
+    with_context,
+};
 
 use super::{
     error::AuthError,
@@ -56,14 +59,10 @@ struct RequestContext<'a> {
     state: String,
     code_verifier: String,
     code_challenge: String,
-    client: &'a reqwest::Client,
 }
 
 impl<'a> RequestContext<'a> {
-    pub(super) fn new(
-        account: &'a model::AuthAccount,
-        client: &'a reqwest::Client,
-    ) -> RequestContext<'a> {
+    pub(super) fn new(account: &'a model::AuthAccount) -> RequestContext<'a> {
         Self {
             account,
             cookie: HashSet::new(),
@@ -71,7 +70,6 @@ impl<'a> RequestContext<'a> {
             state: String::new(),
             code_verifier: String::new(),
             code_challenge: String::new(),
-            client,
         }
     }
 
@@ -116,7 +114,7 @@ impl<'a> RequestContext<'a> {
             }
             None => arkose::ArkoseToken::new_from_context(
                 ArkoseContext::builder()
-                    .client(self.client.clone())
+                    .client(with_context!(arkose_client))
                     .typed(Type::Auth)
                     .build(),
             )

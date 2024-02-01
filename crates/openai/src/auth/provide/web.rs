@@ -300,7 +300,7 @@ impl AuthProvider for WebAuthProvider {
         &self,
         account: &model::AuthAccount,
     ) -> AuthResult<model::AccessToken> {
-        let mut ctx = RequestContext::new(account, &self.0);
+        let mut ctx = RequestContext::new(account);
         // csrf token
         self.csrf_token(&mut ctx).await?;
 

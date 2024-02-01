@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub(super) struct RequestChallenge<'a> {
     pub sid: &'a str,
     pub token: &'a str,
@@ -22,6 +22,7 @@ pub(super) struct Challenge {
     pub challenge_id: String,
     pub game_data: GameData,
     pub string_table: HashMap<String, String>,
+    pub dapib_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -50,7 +51,7 @@ pub(super) struct ApiBreaker {
     pub value: Vec<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 #[allow(dead_code)]
 pub(super) struct ConciseChallenge {
     pub game_type: &'static str,
@@ -66,13 +67,27 @@ pub struct FunCaptcha {
     pub game_variant: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub(super) struct SubmitChallenge<'a> {
     pub session_token: &'a str,
     pub sid: &'a str,
     pub game_token: &'a str,
-    pub guess: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tguess: Option<String>,
+    pub guess: String,
     pub render_type: &'static str,
     pub analytics_tier: i32,
     pub bio: &'static str,
+}
+
+#[derive(Serialize)]
+pub(super) struct TGuess<'a> {
+    pub session_token: &'a str,
+    pub dapib_url: &'a str,
+    pub guess: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct TGuessResp {
+    pub tguess: Vec<HashMap<String, String>>,
 }

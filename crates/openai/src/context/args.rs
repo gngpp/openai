@@ -128,6 +128,14 @@ pub struct Args {
     #[builder(setter(into), default)]
     pub(crate) arkose_solver: Option<ArkoseSolver>,
 
+    /// About the solver tguess endpoint by ArkoseLabs
+    #[builder(setter(into), default)]
+    pub(crate) arkose_solver_tguess_endpoint: Option<String>,
+
+    /// About the solver image store directory by ArkoseLabs
+    #[builder(setter(into), default)]
+    pub(crate) arkose_solver_image_dir: Option<PathBuf>,
+
     /// Enable Tokenbucket
     #[cfg(feature = "limit")]
     #[builder(setter(into), default = false)]

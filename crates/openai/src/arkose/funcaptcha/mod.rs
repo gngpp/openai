@@ -2,13 +2,16 @@ mod breaker;
 pub mod model;
 pub mod solver;
 
-use self::model::{Challenge, ConciseChallenge, FunCaptcha, RequestChallenge};
+use self::model::{Challenge, ConciseChallenge, FunCaptcha, RequestChallenge, TGuess};
 use super::{crypto, ArkoseSolverContext};
 use crate::arkose::error::ArkoseError;
-use crate::arkose::funcaptcha::model::SubmitChallenge;
-use crate::{now_duration, warn};
+use crate::arkose::funcaptcha::model::{SubmitChallenge, TGuessResp};
+use crate::context::arkose::version::ArkoseVersion;
+use crate::{debug, now_duration, warn, with_context};
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 
 type FunResult<T, E = super::error::ArkoseError> = Result<T, E>;
@@ -53,14 +56,18 @@ pub async fn start_challenge(ctx: &ArkoseSolverContext) -> FunResult<Session> {
     headers.insert(header::DNT, header::HeaderValue::from_static("1"));
 
     let mut session = Session {
+        version: with_context!(arkose_context)
+            .version(ctx.typed)
+            .ok_or_else(|| ArkoseError::ArkoseVersionNotFound)?,
         origin: ctx.typed.origin_url(),
         sid,
         session_token,
         funcaptcha: None,
         challenge: None,
-        client: ctx.client.clone(),
         game_type: 0,
         headers,
+        tguess_endpoint: with_context!(arkose_solver_tguess_endpoint),
+        client: ctx.client.clone(),
     };
 
     // Start funcaptcha challenge
@@ -86,21 +93,24 @@ pub async fn start_challenge(ctx: &ArkoseSolverContext) -> FunResult<Session> {
         })
         .collect::<Vec<FunCaptcha>>();
 
-    session.funcaptcha = Some(Arc::new(funcaptcha_list));
+    session.funcaptcha = Some(funcaptcha_list);
+
     Ok(session)
 }
 
 #[derive(Debug)]
 pub struct Session {
     origin: &'static str,
-    client: reqwest::Client,
+    version: Arc<ArkoseVersion>,
     sid: String,
     session_token: String,
     headers: header::HeaderMap,
     #[allow(dead_code)]
     challenge: Option<Challenge>,
-    funcaptcha: Option<Arc<Vec<FunCaptcha>>>,
+    funcaptcha: Option<Vec<FunCaptcha>>,
     game_type: u32,
+    tguess_endpoint: Option<&'static str>,
+    client: reqwest::Client,
 }
 
 impl Session {
@@ -171,10 +181,7 @@ impl Session {
         self.global_callback().await?;
         // Init Callback
         self.callback(
-            &format!(
-                "{}/v2/2.3.4/enforcement.c70df15cb97792b18c2f4978b68954a0.html",
-                self.origin
-            ),
+            &format!("{}{}", self.origin, self.version.ref_enforcement_html()),
             "Site URL",
             None,
             None,
@@ -274,8 +281,36 @@ impl Session {
         Ok(concise_challenge)
     }
 
-    pub async fn submit_answer(&self, answers: Vec<i32>) -> FunResult<()> {
-        let mut answer_index = Vec::with_capacity(answers.len());
+    async fn tguess(&self, guess: Vec<String>, session_token: &str) -> FunResult<Option<String>> {
+        if let Some(ref c) = self.challenge {
+            if let (Some(dapib_url), Some(tguess_endpoint)) = (&c.dapib_url, self.tguess_endpoint) {
+                let resp = self
+                    .client
+                    .post(tguess_endpoint)
+                    .json(&TGuess {
+                        session_token,
+                        guess,
+                        dapib_url,
+                    })
+                    .send()
+                    .await?;
+
+                let tguess_body = resp
+                    .json::<TGuessResp>()
+                    .await
+                    .map_err(ArkoseError::FaieldTGuess)?;
+                debug!("Arkose tguess: {:?}", tguess_body.tguess);
+                return Ok(Some(crypto::encrypt(
+                    &serde_json::to_string(&tguess_body.tguess)?,
+                    session_token,
+                )?));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub async fn submit_answer(&self, answers: &[i32]) -> FunResult<()> {
         let c_ui = &self
             .challenge
             .as_ref()
@@ -283,18 +318,21 @@ impl Session {
             .game_data
             .custom_gui;
 
+        let mut answer_index = Vec::with_capacity(answers.len());
+
         for answer in answers {
             let answer = breaker::hanlde_answer(
                 c_ui.api_breaker_v2_enabled != 0,
                 self.game_type,
                 &c_ui.api_breaker,
-                answer,
+                *answer,
             )?
             .to_string();
             answer_index.push(answer)
         }
 
         let answer = answer_index.join(",");
+
         let submit = SubmitChallenge {
             session_token: &self.session_token,
             sid: &self.sid,
@@ -303,7 +341,8 @@ impl Session {
                 .as_ref()
                 .ok_or_else(|| ArkoseError::UnknownChallenge)?
                 .challenge_id,
-            guess: &crypto::encrypt(&format!("[{answer}]"), &self.session_token)?,
+            tguess: self.tguess(answer_index, &self.session_token).await?,
+            guess: crypto::encrypt(&format!("[{answer}]"), &self.session_token)?,
             render_type: "canvas",
             analytics_tier: 40,
             bio: "eyJtYmlvIjoiMTUwLDAsMTE3LDIzOTszMDAsMCwxMjEsMjIxOzMxNywwLDEyNCwyMTY7NTUwLDAsMTI5LDIxMDs1NjcsMCwxMzQsMjA3OzYxNywwLDE0NCwyMDU7NjUwLDAsMTU1LDIwNTs2NjcsMCwxNjUsMjA1OzY4NCwwLDE3MywyMDc7NzAwLDAsMTc4LDIxMjs4MzQsMCwyMjEsMjI4OzI2MDY3LDAsMTkzLDM1MTsyNjEwMSwwLDE4NSwzNTM7MjYxMDEsMCwxODAsMzU3OzI2MTM0LDAsMTcyLDM2MTsyNjE4NCwwLDE2NywzNjM7MjYyMTcsMCwxNjEsMzY1OzI2MzM0LDAsMTU2LDM2NDsyNjM1MSwwLDE1MiwzNTQ7MjYzNjcsMCwxNTIsMzQzOzI2Mzg0LDAsMTUyLDMzMTsyNjQ2NywwLDE1MSwzMjU7MjY0NjcsMCwxNTEsMzE3OzI2NTAxLDAsMTQ5LDMxMTsyNjY4NCwxLDE0NywzMDc7MjY3NTEsMiwxNDcsMzA3OzMwNDUxLDAsMzcsNDM3OzMwNDY4LDAsNTcsNDI0OzMwNDg0LDAsNjYsNDE0OzMwNTAxLDAsODgsMzkwOzMwNTAxLDAsMTA0LDM2OTszMDUxOCwwLDEyMSwzNDk7MzA1MzQsMCwxNDEsMzI0OzMwNTUxLDAsMTQ5LDMxNDszMDU4NCwwLDE1MywzMDQ7MzA2MTgsMCwxNTUsMjk2OzMwNzUxLDAsMTU5LDI4OTszMDc2OCwwLDE2NywyODA7MzA3ODQsMCwxNzcsMjc0OzMwODE4LDAsMTgzLDI3MDszMDg1MSwwLDE5MSwyNzA7MzA4ODQsMCwyMDEsMjY4OzMwOTE4LDAsMjA4LDI2ODszMTIzNCwwLDIwNCwyNjM7MzEyNTEsMCwyMDAsMjU3OzMxMzg0LDAsMTk1LDI1MTszMTQxOCwwLDE4OSwyNDk7MzE1NTEsMSwxODksMjQ5OzMxNjM0LDIsMTg5LDI0OTszMTcxOCwxLDE4OSwyNDk7MzE3ODQsMiwxODksMjQ5OzMxODg0LDEsMTg5LDI0OTszMTk2OCwyLDE4OSwyNDk7MzIyODQsMCwyMDIsMjQ5OzMyMzE4LDAsMjE2LDI0NzszMjMxOCwwLDIzNCwyNDU7MzIzMzQsMCwyNjksMjQ1OzMyMzUxLDAsMzAwLDI0NTszMjM2OCwwLDMzOSwyNDE7MzIzODQsMCwzODgsMjM5OzMyNjE4LDAsMzkwLDI0NzszMjYzNCwwLDM3NCwyNTM7MzI2NTEsMCwzNjUsMjU1OzMyNjY4LDAsMzUzLDI1NzszMjk1MSwxLDM0OCwyNTc7MzMwMDEsMiwzNDgsMjU3OzMzNTY4LDAsMzI4LDI3MjszMzU4NCwwLDMxOSwyNzg7MzM2MDEsMCwzMDcsMjg2OzMzNjUxLDAsMjk1LDI5NjszMzY1MSwwLDI5MSwzMDA7MzM2ODQsMCwyODEsMzA5OzMzNjg0LDAsMjcyLDMxNTszMzcxOCwwLDI2NiwzMTc7MzM3MzQsMCwyNTgsMzIzOzMzNzUxLDAsMjUyLDMyNzszMzc1MSwwLDI0NiwzMzM7MzM3NjgsMCwyNDAsMzM3OzMzNzg0LDAsMjM2LDM0MTszMzgxOCwwLDIyNywzNDc7MzM4MzQsMCwyMjEsMzUzOzM0MDUxLDAsMjE2LDM1NDszNDA2OCwwLDIxMCwzNDg7MzQwODQsMCwyMDQsMzQ0OzM0MTAxLDAsMTk4LDM0MDszNDEzNCwwLDE5NCwzMzY7MzQ1ODQsMSwxOTIsMzM0OzM0NjUxLDIsMTkyLDMzNDsiLCJ0YmlvIjoiIiwia2JpbyI6IiJ9",
@@ -350,7 +389,6 @@ impl Session {
         }
 
         if !resp.solved {
-            warn!("funcaptcha not solved: {:#?}", self.challenge);
             return Err(ArkoseError::FuncaptchaNotSolvedError(
                 resp.incorrect_guess.unwrap_or_default(),
             ));
@@ -360,7 +398,6 @@ impl Session {
     }
 
     async fn download_image_to_base64(&self, urls: &Vec<String>) -> FunResult<Vec<String>> {
-        use base64::{engine::general_purpose, Engine as _};
         let mut b64_imgs = Vec::new();
         for url in urls {
             let bytes = self
@@ -378,8 +415,61 @@ impl Session {
         Ok(b64_imgs)
     }
 
-    pub fn funcaptcha(&self) -> Option<&Arc<Vec<FunCaptcha>>> {
+    pub fn funcaptcha(&self) -> Option<&Vec<FunCaptcha>> {
         self.funcaptcha.as_ref()
+    }
+
+    pub async fn save_funcaptcha_to_dir(
+        self,
+        dir: impl AsRef<Path>,
+        guess: Vec<i32>,
+    ) -> FunResult<()> {
+        if let Some(funcaptcha) = self.funcaptcha {
+            if guess.len() != funcaptcha.len() {
+                warn!("Guess length != funcaptcha length");
+                return Ok(());
+            }
+
+            for (index, fun) in funcaptcha.into_iter().enumerate() {
+                let game_variant_dir = dir.as_ref().join(fun.game_variant);
+                if !game_variant_dir.exists() {
+                    if let Some(err) = tokio::fs::create_dir(&game_variant_dir).await.err() {
+                        tracing::warn!(
+                            "Failed to create directory: {}, error {err}",
+                            game_variant_dir.display()
+                        );
+                    }
+                }
+
+                // Decode base64 image
+                let image = general_purpose::STANDARD.decode(fun.image)?;
+
+                // Write image to file
+                let image_path =
+                    game_variant_dir.join(format!("{}_{index}.png", self.session_token));
+                // Write image guess to file
+                let image_guess_path =
+                    game_variant_dir.join(format!("{}_{index}.txt", self.session_token));
+
+                if let Some(err) = tokio::fs::write(&image_path, image).await.err() {
+                    tracing::warn!(
+                        "Failed to write image to file: {}, error: {err}",
+                        image_path.display()
+                    );
+                }
+
+                if let Some(err) = tokio::fs::write(&image_guess_path, guess[index].to_string())
+                    .await
+                    .err()
+                {
+                    tracing::warn!(
+                        "Failed to write image guess to file: {}, error: {err}",
+                        image_guess_path.display()
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 }
 

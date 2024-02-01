@@ -100,11 +100,6 @@ fn print_boot_message(inner: &Args) {
             }
         }
     });
-
-    info!(
-        "Starting HTTP(S) server at http(s)://{:?}",
-        inner.bind.expect("bind address required")
-    );
 }
 
 pub struct Serve(Args);
@@ -220,8 +215,11 @@ impl Serve {
         // Fast dns test
         dns::fast::load_fastest_dns(self.0.fastest_dns).await?;
 
-        // Spawn a task to check wan address.
-        tokio::spawn(check_wan_address());
+        // check wan address.
+        check_wan_address().await;
+
+        // upgrade arkose version.
+        tokio::spawn(with_context!(arkose_context).periodic_upgrade());
 
         // http server tcp keepalive
         let tcp_keepalive = Duration::from_secs(self.0.tcp_keepalive as u64 + 1);
@@ -259,6 +257,11 @@ impl Serve {
                 warn!("PreAuth proxy error: {}", err);
             }
         }
+
+        info!(
+            "Starting HTTP(S) server at http(s)://{:?}",
+            self.0.bind.unwrap()
+        );
 
         // Run http server
         let result = match (self.0.tls_cert, self.0.tls_key) {
