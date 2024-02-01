@@ -97,6 +97,15 @@ pub(super) fn config(router: Router, args: &Args) -> Router {
 
     // Configure the UI routing
     router
+        .route("/auth/login", get(login_index))
+        .route(
+            "/auth/login",
+            post(login).layer(
+                ServiceBuilder::new()
+                    .map_request_body(body::boxed)
+                    .layer(middleware::from_fn(csrf::csrf_middleware)),
+            ),
+        )
         .layer(CsrfLayer::new(config))
         .route("/auth/login/token", post(login_token))
         .route("/auth/logout", get(logout))
@@ -115,7 +124,7 @@ pub(super) fn config(router: Router, args: &Args) -> Router {
         .route("/share/:share_id", get(share_chat))
         .route("/share/:share_id/continue", get(share_chat_continue))
         .route("/resources/*path", get(get_static_resource))
-        // .route("/_next/static/*path", get(get_static_resource))
+        .route("/_next/static/*path", get(get_static_resource))
         .route("/fonts/*path", get(get_static_resource))
         .route("/ulp/*path", get(get_static_resource))
         .route("/sweetalert2/*path", get(get_static_resource))
@@ -359,8 +368,8 @@ fn create_response_from_session(s: Session) -> Result<Response<Body>, ResponseEr
 /// Get auth me
 async fn auth_me(headers: HeaderMap, jar: CookieJar) -> Result<impl IntoResponse, ResponseError> {
     let resp = with_context!(api_client)
-        .get(format!("{}/backend-api/me",URL_CHATGPT_API.as_str()))
-        .headers(header_convert(&headers, &jar, &URL_CHATGPT_API)?)
+        .get(format!("{URL_CHATGPT_API}/backend-api/me"))
+        .headers(header_convert(&headers, &jar, URL_CHATGPT_API)?)
         .send()
         .await
         .map_err(ResponseError::InternalServerError)?;
@@ -457,15 +466,13 @@ async fn share_chat(
     share_id: Path<String>,
     extract: SessionExt,
 ) -> Result<Response<Body>, ResponseError> {
-    let url_chatgpt_api = URL_CHATGPT_API.clone();
     let share_id = share_id.0;
-    let url = format!("{}/backend-api/share/{}", url_chatgpt_api, share_id);
     let resp = with_context!(api_client)
-        .get(url)
+        .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
         .headers(header_convert(
             &extract.headers,
             &extract.jar,
-            &URL_CHATGPT_API,
+            URL_CHATGPT_API,
         )?)
         .send()
         .await
@@ -506,11 +513,11 @@ async fn share_chat_info(
 ) -> Result<Response<Body>, ResponseError> {
     let share_id = share_id.0.replace(".json", EMPTY);
     let resp = with_context!(api_client)
-        .get(format!("{}/backend-api/share/{}",URL_CHATGPT_API.as_str(),share_id))
+        .get(format!("{URL_CHATGPT_API}/backend-api/share/{share_id}"))
         .headers(header_convert(
             &extract.headers,
             &extract.jar,
-            &URL_CHATGPT_API,
+            URL_CHATGPT_API,
         )?)
         .send()
         .await
@@ -561,10 +568,10 @@ async fn share_chat_continue_info(
 ) -> Result<Response<Body>, ResponseError> {
     let resp = with_context!(api_client)
         .get(format!(
-            "{}/backend-api/share/{}",URL_CHATGPT_API.as_str(),
+            "{URL_CHATGPT_API}/backend-api/share/{}",
             share_id.0
         ))
-        .headers(header_convert(&s.headers, &s.jar, &URL_CHATGPT_API)?)
+        .headers(header_convert(&s.headers, &s.jar, URL_CHATGPT_API)?)
         .send()
         .await
         .map_err(ResponseError::InternalServerError)?;

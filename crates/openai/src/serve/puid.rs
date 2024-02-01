@@ -34,10 +34,10 @@ pub(super) async fn get_or_init(
     if let Some(p) = puid_cache.get(&cache_id) {
         return Ok(Some(p.clone()));
     }
-    
+
     if GPTModel::from_str(model)?.is_gpt4() {
         let resp = with_context!(api_client)
-            .get(format!("{}/backend-api/models",URL_CHATGPT_API.clone()))
+            .get(format!("{URL_CHATGPT_API}/backend-api/models"))
             .bearer_auth(token)
             .send()
             .await

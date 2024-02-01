@@ -23,13 +23,12 @@ pub mod uuid;
 use std::time::Duration;
 
 pub const LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const URL_CHATGPT_API: &str = "https://chat.openai.com";
+pub const URL_PLATFORM_API: &str = "https://api.openai.com";
+
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref URL_CHATGPT_API: String = std::env::var("UNOFFICIAL_PROXY").unwrap_or_else(|_| String::from("https://oai-proxy.cloud.sealos.io/https://chat.openai.com"));
-    static ref URL_PLATFORM_API: String = std::env::var("URL_PLATFORM_API").unwrap_or_else(|_| String::from("https://oai-proxy.cloud.sealos.io/https://api.openai.com"));
-    static ref STATIC_CDN_PROXY: String = std::env::var("STATIC_CDN_PROXY").unwrap_or_else(|_| String::from("https://oai-cdn.study-k8s.com"));
-    static ref NINJA_API_ENDPOINT: String = std::env::var("NINJA_API_ENDPOINT").unwrap_or_else(|_| String::from("http://127.0.0.1:7999"));
     static ref NEXT_DATA_ENDPOINT: String = std::env::var("NEXT_DATA_ENDPOINT").unwrap_or_else(|_| String::from("https://next-data.study-k8s.com"));
 }
 

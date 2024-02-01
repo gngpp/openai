@@ -109,9 +109,9 @@ impl Type {
     /// Get the origin url
     pub fn origin_url(&self) -> &'static str {
         match self {
-            Type::Auth => "https://oai-proxy.cloud.sealos.io/https://tcr9i.openai.com",
-            Type::GPT3 | Type::GPT4 => "https://oai-proxy.cloud.sealos.io/https://tcr9i.chat.openai.com",
-            Type::Platform | Type::SignUp => "https://oai-proxy.cloud.sealos.io/https://openai-api.arkoselabs.com",
+            Type::Auth => "https://tcr9i.openai.com",
+            Type::GPT3 | Type::GPT4 => "https://tcr9i.chat.openai.com",
+            Type::Platform | Type::SignUp => "https://openai-api.arkoselabs.com",
         }
     }
 }
@@ -209,7 +209,7 @@ impl ArkoseToken {
         serde_json::json!({
             "token": self.token,
             "challenge_url":"",
-            "challenge_url_cdn":"https://client-api.arkoselabs.com/cdn/fc/assets/ec-game-core/bootstrap/1.18.0/standard/game_core_bootstrap.js",
+            "challenge_url_cdn":"/cdn/fc/assets/ec-game-core/bootstrap/1.18.0/standard/game_core_bootstrap.js",
             "challenge_url_cdn_sri":null,
             "noscript":"Disable",
             "inject_script_integrity":null,

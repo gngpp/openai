@@ -35,7 +35,7 @@ pub async fn start_challenge(ctx: &ArkoseSolverContext) -> FunResult<Session> {
 
     let referer = format!(
         "{}/fc/assets/ec-game-core/game-core/1.18.0/standard/index.html?session={}",
-        "https://client-api.arkoselabs.com",
+        ctx.typed.origin_url(),
         value.replace("|", "&")
     );
     let mut headers = header::HeaderMap::new();
@@ -119,7 +119,7 @@ impl Session {
             .client
             .get(format!(
                 "{}/fc/gc/?token={}",
-                "https://client-api.arkoselabs.com", self.session_token
+                self.origin, self.session_token
             ))
             .send()
             .await?
