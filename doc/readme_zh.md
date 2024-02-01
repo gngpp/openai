@@ -24,8 +24,8 @@
   GitHub [Releases](https://github.com/gngpp/ninja/releases/latest) 中有预编译的 deb包，二进制文件，以Ubuntu为例：
 
 ```shell
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/ninja-0.9.13-x86_64-unknown-linux-musl.tar.gz
-tar -xf ninja-0.9.13-x86_64-unknown-linux-musl.tar.gz
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/ninja-0.9.16-x86_64-unknown-linux-musl.tar.gz
+tar -xf ninja-0.9.16-x86_64-unknown-linux-musl.tar.gz
 mv ./ninja /bin/ninja
 
 # 在线更新版本
@@ -61,11 +61,11 @@ ninja (run/start/restart) -C serve.toml
 GitHub [Releases](https://github.com/gngpp/ninja/releases/latest) 中有预编译的 ipk 文件， 目前提供了 aarch64/x86_64 等架构的版本，下载后使用 opkg 安装，以 nanopi r4s 为例：
 
 ```shell
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/ninja_0.9.13_aarch64_generic.ipk
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/luci-app-ninja_1.1.6-1_all.ipk
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/ninja_0.9.16_aarch64_generic.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/luci-app-ninja_1.1.6-1_all.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
 
-opkg install ninja_0.9.13_aarch64_generic.ipk
+opkg install ninja_0.9.16_aarch64_generic.ipk
 opkg install luci-app-ninja_1.1.6-1_all.ipk
 opkg install luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
 ```
@@ -122,15 +122,17 @@ services:
 
 1) 使用HAR
 
-- 支持HAR特征池化，可同时上传多个HAR，使用轮训策略
-
-`ChatGPT` 官网发送一次 `GPT-4` 会话消息，浏览器 `F12` 下载 `https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147` 接口的HAR日志记录文件，使用启动参数 `--arkose-gpt4-har-dir` 指定HAR目录路径使用（不指定路径则使用默认路径`~/.ninja/gpt4`，可直接上传更新HAR），同理`GPT-3.5`和其他类型也是一样方法。支持WebUI上传更新HAR，请求路径:`/har/upload`，可选上传身份验证参数:`--arkose-har-upload-key`
+- 支持HAR特征池化，可同时上传多个HAR，使用轮训策略，下面是获取HAR文件的方法
+  - 先登录到 `ChatGPT` 的 `GPT4` 提问界面，按下 `F12` 键，此时会打开浏览器的控制台，找到 `network` （如果你的控制台为中文，则显示为 `网络` ）并左键点击，此时会切换到浏览器的网络抓包界面
+  - 在控制台打开的情况下，发送一次 `GPT-4` 会话消息，然后在抓包界面找到 `filter` （如果你的控制台为中文，则显示为 `过滤` ），输入这个地址进行过滤 `https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147`
+  - 过滤出来的至少会有一条记录，随机选择一条，然后下载这个接口的HAR日志记录文件，具体操作是：右键点击这条记录，然后找到 `Save all as HAR with content` （如果你的控制台为中文，则显示为 `以 HAR 格式保存所有内容` ）
+  - 使用启动参数 `--arkose-gpt4-har-dir` 指定HAR目录路径使用（不指定路径则使用默认路径`~/.ninja/gpt4`，可直接上传更新HAR），同理`GPT-3.5`和其他类型也是一样方法。支持WebUI上传更新HAR，请求路径:`/har/upload`，可选上传身份验证参数:`--arkose-har-upload-key`
 
 2) 使用 [Fcsrv](https://github.com/gngpp/fcsrv) / [YesCaptcha](https://yescaptcha.com/i/1Cc5i4) / [CapSolver](https://dashboard.capsolver.com/passport/register?inviteCode=y7CtB_a-3X6d)
 
 - `Fcsrv` / `YesCaptcha` / `CapSolver`推荐搭配HAR使用，出验证码则调用解析器处理
 
-平台进行验证码解析，启动参数`--arkose-solver`选择平台（默认使用`Fcsrv`），`--arkose-solver-key` 填写`Client Key`，选择自定义的提交节点URL，例如：`http://localhost:8000/task`，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，重要的事情说三遍。
+平台进行验证码解析，启动参数`--arkose-solver`选择平台（默认使用`Fcsrv`），`--arkose-solver-key` 填写`Client Key`，选择自定义的提交节点URL，例如：`--arkose-solver-endpoint http://localhost:8000/task`，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，`Fcsrv`/`YesCaptcha`/`CapSolver`都支持，重要的事情说三遍。
 
 目前OpenAI已经更新`登录`需要验证`Arkose Token`，解决方式同`GPT-4`，填写启动参数指定HAR文件`--arkose-auth-har-dir`。创建API-Key需要上传Platform相关的HAR特征文件，获取方式同上。
 
@@ -360,10 +362,12 @@ Options:
           About ArkoseLabs solver platform [default: fcsrv]
   -k, --arkose-solver-key <ARKOSE_SOLVER_KEY>
           About the solver client key by ArkoseLabs
-      --arkose-solver-url <ARKOSE_SOLVER_URL>
-          About the solver client url by ArkoseLabs
+      --arkose-solver-endpoint <ARKOSE_SOLVER_ENDPOINT>
+          About the solver client endpoint by ArkoseLabs
       --arkose-solver-limit <ARKOSE_SOLVER_LIMIT>
           About the solver submit multiple image limit by ArkoseLabs [default: 1]
+      --arkose-solver-tguess-endpoint <ARKOSE_SOLVER_TGUESS_ENDPOINT>
+          About the solver tguess endpoint by ArkoseLabs
   -T, --tb-enable
           Enable token bucket flow limitation
       --tb-strategy <TB_STRATEGY>

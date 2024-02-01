@@ -24,8 +24,8 @@ If the project is helpful to you, please consider [donating support](https://git
 Making [Releases](https://github.com/gngpp/ninja/releases/latest) has a precompiled deb package, binaries, in Ubuntu, for example:
 
 ```shell
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/ninja-0.9.13-x86_64-unknown-linux-musl.tar.gz
-tar -xf ninja-0.9.13-x86_64-unknown-linux-musl.tar.gz
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/ninja-0.9.16-x86_64-unknown-linux-musl.tar.gz
+tar -xf ninja-0.9.16-x86_64-unknown-linux-musl.tar.gz
 mv ./ninja /bin/ninja
 ./ninja run
 
@@ -62,11 +62,11 @@ ninja (run/start/restart) -C serve.toml
 There are pre-compiled ipk files in GitHub [Releases](https://github.com/gngpp/ninja/releases/latest), which currently provide versions of aarch64/x86_64 and other architectures. After downloading, use opkg to install, and use nanopi r4s as example:
 
 ```shell
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/ninja_0.9.13_aarch64_generic.ipk
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/luci-app-ninja_1.1.6-1_all.ipk
-wget https://github.com/gngpp/ninja/releases/download/v0.9.13/luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/ninja_0.9.16_aarch64_generic.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/luci-app-ninja_1.1.6-1_all.ipk
+wget https://github.com/gngpp/ninja/releases/download/v0.9.16/luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
 
-opkg install ninja_0.9.13_aarch64_generic.ipk
+opkg install ninja_0.9.16_aarch64_generic.ipk
 opkg install luci-app-ninja_1.1.6-1_all.ipk
 opkg install luci-i18n-ninja-zh-cn_1.1.6-1_all.ipk
 ```
@@ -123,16 +123,18 @@ Sending `GPT-4/GPT-3.5/Creating API-Key` dialog requires sending `Arkose Token` 
 
 1) Use HAR
 
-- Supports HAR feature pooling, can upload multiple HARs at the same time, and use rotation training strategy
-
-The `ChatGPT` official website sends a `GPT-4` session message, and the browser `F12` downloads the `https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147` interface. HAR log file, use the startup parameter `--arkose-gpt4-har-dir` to specify the HAR directory path to use (if you do not specify a path, use the default path `~/.ninja/gpt4`, you can directly upload and update HAR ), the same method applies to `GPT-3.5` and other types. Supports WebUI to upload and update HAR, request path: `/har/upload`, optional upload authentication parameter: `--arkose-har-upload-key`
+- Support HAR feature pooling, multiple HAR can be uploaded simultaneously, using round-robin strategy. The following is the method to obtain the HAR file:
+  - First, log in to the `ChatGPT` GPT4 question interface, press the `F12` key, and the browser console will open. Find `network` and click with the left mouse button (If your console is in Chinese, it will be displayed as `网络`), and the browser's network capture interface will switch to.
+  - With the console open, send a `GPT-4` session message, then find `filter` in the capture interface (If your console is in Chinese, it will be displayed as `过滤`), enter this address for filtering: `https://tcr9i.chat.openai.com/fc/gt2/public_key/35536E1E-65B4-4D96-9D97-6ADB7EFF8147`
+  - At least one record will be filtered out. Randomly select one and download the HAR log record file of this interface. The specific operation is: right-click on this record, then find `Save all as HAR with content` (If your console is in Chinese, it will be displayed as `以 HAR 格式保存所有内容`).
+  - Use the startup parameter `--arkose-gpt4-har-dir` to specify the HAR directory path (if no path is specified, the default path `~/.ninja/gpt4` will be used), and directly upload and update the HAR. The same method applies to `GPT-3.5` and other types. Support WebUI for uploading and updating HAR, request path: `/har/upload`, optional authentication parameter: `--arkose-har-upload-key`.
 
 2) Use [Fcsrv](https://github.com/gngpp/fcsrv) / [YesCaptcha](https://yescaptcha.com/i/1Cc5i4) / [CapSolver](https://dashboard.capsolver.com/passport/register?inviteCode=y7CtB_a-3X6d)
 
 
 - `Fcsrv` / `YesCaptcha` / `CapSolver` is recommended to be used with HAR. When the verification code is generated, the parser is called for processing.
 
-The platform performs verification code parsing, and the startup parameter `--arkose-solver` selects the platform (default uses `Fcsrv`), `--arkose-solver-key` fills in the `Client Key`, and selects the customized submission node URL, for example: `http://localhost:8000/task`, `Fcsrv`/`YesCaptcha`/`CapSolver` are supported, `Fcsrv`/`YesCaptcha`/`CapSolver` is supported, `Fcsrv`/`YesCaptcha`/`CapSolver` Everyone supports it. Say important things three times.
+The platform performs verification code parsing, and the startup parameter `--arkose-solver` selects the platform (default uses `Fcsrv`), `--arkose-solver-key` fills in the `Client Key`, and selects the customized submission node URL, for example: `--arkose-solver-endpoint http://localhost:8000/task`, `Fcsrv`/`YesCaptcha`/`CapSolver` are supported, `Fcsrv`/`YesCaptcha`/`CapSolver` is supported, `Fcsrv`/`YesCaptcha`/`CapSolver` Everyone supports it. Say important things three times.
 
 Currently OpenAI has updated `Login` which requires verification of `Arkose Token`. The solution is the same as `GPT-4`. Fill in the startup parameters and specify the HAR file `--arkose-auth-har-dir`. To create an API-Key, you need to upload the HAR feature file related to the Platform. The acquisition method is the same as above.
 
@@ -361,10 +363,12 @@ Options:
           About ArkoseLabs solver platform [default: fcsrv]
   -k, --arkose-solver-key <ARKOSE_SOLVER_KEY>
           About the solver client key by ArkoseLabs
-      --arkose-solver-url <ARKOSE_SOLVER_URL>
-          About the solver client url by ArkoseLabs
+      --arkose-solver-endpoint <ARKOSE_SOLVER_ENDPOINT>
+          About the solver client endpoint by ArkoseLabs
       --arkose-solver-limit <ARKOSE_SOLVER_LIMIT>
           About the solver submit multiple image limit by ArkoseLabs [default: 1]
+      --arkose-solver-tguess-endpoint <ARKOSE_SOLVER_TGUESS_ENDPOINT>
+          About the solver tguess endpoint by ArkoseLabs
   -T, --tb-enable
           Enable token bucket flow limitation
       --tb-strategy <TB_STRATEGY>

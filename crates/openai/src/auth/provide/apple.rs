@@ -287,7 +287,7 @@ impl AuthProvider for AppleAuthProvider {
         let code_verifier = AuthClient::generate_code_verifier();
         let code_challenge = AuthClient::generate_code_challenge(&code_verifier);
 
-        let mut ctx = RequestContext::new(account, &self.inner);
+        let mut ctx = RequestContext::new(account);
         ctx.set_code_verifier(code_verifier);
         ctx.set_code_challenge(code_challenge);
 

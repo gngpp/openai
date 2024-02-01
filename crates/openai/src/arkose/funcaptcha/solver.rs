@@ -46,24 +46,26 @@ impl ToString for Solver {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArkoseSolver {
     pub solver: Solver,
-    client_key: String,
-    url: String,
     pub limit: usize,
+    client_key: String,
+    endpoint: String,
 }
 
 impl ArkoseSolver {
-    pub fn new(solver: Solver, client_key: String, url: Option<String>, limit: usize) -> Self {
-        let url = match solver {
+    pub fn new(solver: Solver, client_key: String, endpoint: Option<String>, limit: usize) -> Self {
+        let endpoint = match solver {
             Solver::Yescaptcha => {
-                url.unwrap_or("https://api.yescaptcha.com/createTask".to_string())
+                endpoint.unwrap_or("https://api.yescaptcha.com/createTask".to_string())
             }
-            Solver::Capsolver => url.unwrap_or("https://api.capsolver.com/createTask".to_string()),
-            Solver::Fcsrv => url.unwrap_or("http://127.0.0.1:8000/task".to_string()),
+            Solver::Capsolver => {
+                endpoint.unwrap_or("https://api.capsolver.com/createTask".to_string())
+            }
+            Solver::Fcsrv => endpoint.unwrap_or("http://127.0.0.1:8000/task".to_string()),
         };
         Self {
             solver,
             client_key,
-            url,
+            endpoint,
             limit,
         }
     }
@@ -114,7 +116,7 @@ struct ReqBody1<'a> {
     api_key: Option<&'a str>,
     #[serde(rename = "type")]
     typed: &'a str,
-    images: Option<Vec<String>>,
+    images: Option<Vec<&'a String>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -122,9 +124,9 @@ struct ReqTask0<'a> {
     #[serde(rename = "type")]
     type_field: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    image: Option<String>,
+    image: Option<&'a String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    images: Option<Vec<String>>,
+    images: Option<Vec<&'a String>>,
     question: &'a str,
 }
 
@@ -132,10 +134,10 @@ struct ReqTask0<'a> {
 pub struct SubmitSolver<'a> {
     arkose_solver: &'a ArkoseSolver,
     #[builder(setter(into), default)]
-    image: Option<String>,
+    image: Option<&'a String>,
     #[builder(setter(into), default)]
-    images: Option<Vec<String>>,
-    question: String,
+    images: Option<Vec<&'a String>>,
+    question: &'a String,
 }
 
 pub async fn submit_task(submit_task: SubmitSolver<'_>) -> anyhow::Result<Vec<i32>> {
@@ -179,7 +181,7 @@ pub async fn submit_task(submit_task: SubmitSolver<'_>) -> anyhow::Result<Vec<i3
     };
 
     let resp = with_context!(arkose_client)
-        .post(&submit_task.arkose_solver.url)
+        .post(&submit_task.arkose_solver.endpoint)
         .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
         .body(body)
         .send()

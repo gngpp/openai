@@ -37,9 +37,16 @@ pub enum ArkoseError {
     #[error("Deserialize error {0:?}")]
     DeserializeError(reqwest::Error),
 
+    /// Base64 decode error
+    #[error("Base64 decode error {0:?}")]
+    Base64DecodeError(#[from] base64::DecodeError),
+
     /// Serialize error
     #[error("Serialize error {0:?}")]
     SerializeError(#[from] serde_urlencoded::ser::Error),
+
+    #[error("Serialize error ({0:?})")]
+    SerializeError2(#[from] serde_json::Error),
 
     /// Funcaptcha error
     #[error("Funcaptcha submit error ({0})")]
@@ -54,6 +61,11 @@ pub enum ArkoseError {
     UnknownChallenge,
     #[error("Invalid arkose token ({0})")]
     InvalidArkoseToken(String),
+    #[error("Faield to get tguess ({0})")]
+    FaieldTGuess(reqwest::Error),
+
+    #[error("Arkose version not found")]
+    ArkoseVersionNotFound,
 
     /// Header parse error
     #[error("Invalid header ({0})")]

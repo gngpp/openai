@@ -243,6 +243,10 @@ impl ArkoseToken {
             Type::Platform => (PLATFORM_BX, "lightbox"),
         };
 
+        let version = with_context!(arkose_context)
+            .version(ctx.typed)
+            .ok_or_else(|| ArkoseError::ArkoseVersionNotFound)?;
+
         let site = ctx.typed.site_url();
         let pk = ctx.typed.pk();
 
@@ -270,7 +274,7 @@ impl ArkoseToken {
             ("public_key", pk.to_owned()),
             ("site", site.to_owned()),
             ("userbrowser", bv.to_owned()),
-            ("capi_version", "2.3.4".to_owned()),
+            ("capi_version", version.version().to_owned()),
             ("capi_mode", capi_mode.to_owned()),
             ("style_theme", "default".to_owned()),
             ("rnd", rand::thread_rng().gen::<f64>().to_string()),
@@ -326,6 +330,10 @@ impl ArkoseToken {
     pub async fn new_from_har(ctx: &mut ArkoseContext) -> anyhow::Result<Self> {
         let regex = get_or_init_regex().await;
 
+        let version = with_context!(arkose_context)
+            .version(ctx.typed)
+            .ok_or_else(|| ArkoseError::ArkoseVersionNotFound)?;
+
         let mut entry = har::get_entry(&ctx.typed)?;
 
         let bt = now_duration()?.as_secs();
@@ -340,7 +348,9 @@ impl ArkoseToken {
         );
 
         // Update capi_version
-        entry.body.push_str(&format!("&capi_version=2.3.4"));
+        entry
+            .body
+            .push_str(&format!("&capi_version={}", version.version()));
 
         // Update bda entry
         entry.body.push_str(&format!(
@@ -430,7 +440,7 @@ impl ArkoseToken {
                 .arkose_token(arkose_token)
                 .client(ctx.client)
                 .build();
-            return Ok(valid_arkose_token(arkose_solver, solver_context).await?);
+            return Ok(valid_arkose_token(arkose_solver, solver_context).await);
         }
 
         // If arkose solver is not empty, use bx
@@ -442,7 +452,7 @@ impl ArkoseToken {
                 .arkose_token(arkose_token)
                 .client(ctx.client)
                 .build();
-            return Ok(valid_arkose_token(arkose_solver, solver_context).await?);
+            return Ok(valid_arkose_token(arkose_solver, solver_context).await);
         }
 
         Err(ArkoseError::NoSolverAvailable.into())
@@ -506,25 +516,33 @@ impl ArkoseToken {
 async fn valid_arkose_token(
     arkose_solver: Option<&'static ArkoseSolver>,
     ctx: ArkoseSolverContext,
-) -> ArkoseResult<ArkoseToken> {
+) -> ArkoseToken {
+    // If success, return token
     if ctx.arkose_token.success() {
         // Submit token to funcaptcha callback
         let _ = ctx.arkose_token.callback().await;
-    } else {
-        // If arkose solver is not empty, use solver
-        if let Some(arkose_solver) = arkose_solver {
-            return submit_funcaptcha(&arkose_solver, ctx).await;
-        }
-        warn!("arkose token is invalid, but no solver is available.")
+        return ctx.arkose_token;
     }
 
-    Ok(ctx.arkose_token)
+    // If arkose solver is not empty, use solver
+    match submit_funcaptcha(arkose_solver, &ctx).await {
+        Ok(arkose_token) => {
+            return arkose_token;
+        }
+        Err(err) => {
+            warn!("Funcaptcha solver error: {err}");
+            return ctx.arkose_token;
+        }
+    }
 }
 
 async fn submit_funcaptcha(
-    arkose_solver: &'static ArkoseSolver,
-    ctx: ArkoseSolverContext,
+    arkose_solver: Option<&'static ArkoseSolver>,
+    ctx: &ArkoseSolverContext,
 ) -> ArkoseResult<ArkoseToken> {
+    // Try get arkose solver
+    let arkose_solver = arkose_solver.ok_or_else(|| ArkoseError::NoSolverAvailable)?;
+
     // Start challenge, return session
     let session = funcaptcha::start_challenge(&ctx).await?;
 
@@ -539,8 +557,8 @@ async fn submit_funcaptcha(
             for (_, fun) in funs.iter().enumerate() {
                 let submit_task = SubmitSolver::builder()
                     .arkose_solver(arkose_solver)
-                    .question(fun.instructions.clone())
-                    .image(fun.image.clone())
+                    .question(&fun.instructions)
+                    .image(&fun.image)
                     .build();
                 answers.extend(funcaptcha::solver::submit_task(submit_task).await?)
             }
@@ -560,13 +578,17 @@ async fn submit_funcaptcha(
                 let images_chunks = data
                     .1
                     .chunks(arkose_solver.limit)
-                    .map(|item| item.iter().map(|item| item.image.clone()).collect())
-                    .collect::<Vec<Vec<String>>>();
+                    .map(|item| {
+                        item.iter()
+                            .map(|item| &item.image)
+                            .collect::<Vec<&String>>()
+                    })
+                    .collect::<Vec<Vec<&String>>>();
 
                 for (_, images) in images_chunks.into_iter().enumerate() {
                     let submit_task = SubmitSolver::builder()
                         .arkose_solver(arkose_solver)
-                        .question(data.0.clone())
+                        .question(&data.0)
                         .images(images)
                         .build();
                     answers.extend(funcaptcha::solver::submit_task(submit_task).await?)
@@ -576,7 +598,13 @@ async fn submit_funcaptcha(
     };
 
     // Submit answers
-    let _ = session.submit_answer(answers).await?;
+    let _ = session.submit_answer(answers.as_slice()).await?;
+
+    // Store funcaptcha solved image
+    if let Some(dir) = with_context!(arkose_solver_image_dir) {
+        tokio::spawn(session.save_funcaptcha_to_dir(dir, answers));
+    }
+
     let new_token = ctx.arkose_token.value().replace("at=40", "at=40|sup=1");
     Ok(ArkoseToken::from(new_token))
 }

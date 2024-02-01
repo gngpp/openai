@@ -252,7 +252,7 @@ impl AuthProvider for PlatformAuthProvider {
         &self,
         account: &model::AuthAccount,
     ) -> AuthResult<model::AccessToken> {
-        let mut ctx = RequestContext::new(account, &self.0);
+        let mut ctx = RequestContext::new(account);
         // authorized
         self.authorize(&mut ctx).await?;
 

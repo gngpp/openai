@@ -25,7 +25,7 @@ pub(super) fn serve(mut args: ServeArgs, relative_path: bool) -> anyhow::Result<
         Some(client_key) => Some(ArkoseSolver::new(
             args.arkose_solver,
             client_key.clone(),
-            args.arkose_solver_url,
+            args.arkose_solver_endpoint,
             args.arkose_solver_limit,
         )),
         None => None,
@@ -79,6 +79,8 @@ pub(super) fn serve(mut args: ServeArgs, relative_path: bool) -> anyhow::Result<
         .arkose_gpt3_experiment_solver(args.arkose_gpt3_experiment_solver)
         .arkose_har_upload_key(args.arkose_har_upload_key)
         .arkose_solver(arkose_solver)
+        .arkose_solver_tguess_endpoint(args.arkose_solver_tguess_endpoint)
+        .arkose_solver_image_dir(args.arkose_solver_image_dir)
         .enable_file_proxy(args.enable_file_proxy)
         .enable_arkose_proxy(args.enable_arkose_proxy)
         .pbind(args.pbind)

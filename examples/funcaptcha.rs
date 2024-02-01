@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
 
     context::init(
         Args::builder()
+            .arkose_solver_tguess_endpoint(Some("https://example.com/tguess".to_owned()))
             .arkose_solver(ArkoseSolver::new(solver, client_key, None, 1))
             .build(),
     );
