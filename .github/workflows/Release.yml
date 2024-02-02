@@ -21,7 +21,6 @@ jobs:
       - name: Install depends
         run: |
           sudo apt update && sudo apt install upx rename -y
-
       - name: Get tag
         if: startsWith(github.ref, 'refs/tags/')
         id: tag
@@ -37,7 +36,6 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
             echo "tag=latest" >> $GITHUB_ENV
           fi
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
@@ -51,7 +49,6 @@ jobs:
           GIT_TOKEN: ${{ secrets.CR_PAT }}
         run: |
           rmi=true os=linux bash +x build.sh
-
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -72,7 +69,6 @@ jobs:
       - name: Install depends
         run: |
           sudo apt update && sudo apt install upx rename -y
-
       - name: Get tag
         if: startsWith(github.ref, 'refs/tags/')
         id: tag
@@ -88,7 +84,6 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
             echo "tag=latest" >> $GITHUB_ENV
           fi
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
@@ -102,7 +97,6 @@ jobs:
           GIT_TOKEN: ${{ secrets.CR_PAT }}
         run: |
           rmi=true os=windows bash +x build.sh
-
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -141,14 +135,12 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
             echo "tag=latest" >> $GITHUB_ENV
           fi
-
       - name: Build
         env:
           GIT_TOKEN: ${{ secrets.CR_PAT }}
         shell: bash
         run: |
           os=macos bash +x build.sh
-
       - name: Upload binaries to GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -212,10 +204,8 @@ jobs:
           cd openwrt-sdk
           cat feeds.conf.default >> feeds.conf
           cat feeds.conf
-
           ./scripts/feeds update -a > /dev/null
           make defconfig
-
           ./scripts/feeds install -d y -f -a
           make package/ninja/compile V=s
           make package/luci-app-ninja/compile V=s
@@ -292,7 +282,6 @@ jobs:
           cd docker
           tag=${{ steps.tag.outputs.tag }} bash +x build.sh
           cd -
-
       - name: Docker Hub Description
         if: startsWith(github.ref, 'refs/tags/')
         uses: peter-evans/dockerhub-description@v3
