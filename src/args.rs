@@ -172,6 +172,10 @@ pub struct ServeArgs {
     /// Arkose endpoint, e.g. https://client-api.arkoselabs.com
     #[clap(long, value_parser = parse::parse_url)]
     pub(super) arkose_endpoint: Option<String>,
+    
+    /// Websocket endpoint, e.g. wss://server.com/ws
+    #[clap(long, value_parser = parse::parse_websocket_url , env = "WEBSOCKET_ENDPOINT")]
+    pub(super) websocket_endpoint: Option<String>,
 
     /// Enable Arkose GPT-3.5 experiment
     #[clap(short = 'E', long, default_value = "false")]

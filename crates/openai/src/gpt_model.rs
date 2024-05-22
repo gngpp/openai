@@ -7,6 +7,7 @@ pub enum GPTModel {
     Gpt35,
     Gpt4,
     Gpt4Mobile,
+    GptGizmo,
 }
 
 impl Serialize for GPTModel {
@@ -15,6 +16,7 @@ impl Serialize for GPTModel {
             GPTModel::Gpt35 => "text-davinci-002-render-sha",
             GPTModel::Gpt4 => "gpt-4",
             GPTModel::Gpt4Mobile => "gpt-4-mobile",
+            GPTModel::GptGizmo => "gpt-4-gizmo",
         };
         serializer.serialize_str(model)
     }
@@ -34,6 +36,13 @@ impl GPTModel {
             _ => false,
         }
     }
+
+    pub fn is_gizmo(&self) -> bool {
+        match self {
+            GPTModel::GptGizmo => true,
+            _ => false,
+        }
+    }
 }
 
 impl FromStr for GPTModel {
@@ -47,6 +56,9 @@ impl FromStr for GPTModel {
                 || s.starts_with("code-davinci") =>
             {
                 Ok(GPTModel::Gpt35)
+            }
+            s if s.starts_with("g-")=> {
+                Ok(GPTModel::GptGizmo)
             }
             // If the model is gpt-4-mobile, we assume it's gpt-4-mobile
             "gpt-4-mobile" => Ok(GPTModel::Gpt4Mobile),

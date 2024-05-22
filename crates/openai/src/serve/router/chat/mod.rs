@@ -26,9 +26,17 @@ use axum_csrf::CsrfLayer;
 use axum_csrf::CsrfToken;
 use axum_csrf::Key;
 use axum_extra::extract::CookieJar;
+
+use axum::extract::ws::{WebSocket, WebSocketUpgrade, Message , CloseFrame};
+use futures_util::{stream::StreamExt, sink::SinkExt};
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use std::net::SocketAddr;
+use tokio_tungstenite::tungstenite::http::header::{HeaderValue, SEC_WEBSOCKET_PROTOCOL};
+
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::net::SocketAddr;
+ 
 use std::sync::OnceLock;
 use tower::ServiceBuilder;
 use tower_http::ServiceBuilderExt;
@@ -55,7 +63,9 @@ use crate::{
     token::model::Token,
     URL_CHATGPT_API,
 };
-
+use tokio_tungstenite::tungstenite::{
+        self as ts
+    };
 use super::get_static_resource;
 use session::session::Session;
 use session::SessionExt;
@@ -141,8 +151,91 @@ pub(super) fn config(router: Router, args: &Args) -> Router {
         .route("/fonts/*path", get(get_static_resource))
         .route("/ulp/*path", get(get_static_resource))
         .route("/sweetalert2/*path", get(get_static_resource))
+
+        //  wss proxy
+        .route("/client/hubs/conversations",get(proxy_ws))
+
+
         // 404 endpoint
         .fallback(error_404)
+}
+// 定义一个用于接收查询参数的结构体
+#[derive(serde::Deserialize)]
+struct WsQuery {
+    access_token: String,
+    host: String,
+}
+ 
+async fn proxy_ws(
+    Query(query): Query<WsQuery>,
+    ws: WebSocketUpgrade
+) -> impl IntoResponse {
+    ws.protocols(["json.reliable.webpubsub.azure.v1"]).on_upgrade(move |socket| handle_socket(socket ,query.host, query.access_token))
+}
+async fn handle_socket(socket: WebSocket  , host:String, access_token: String) {
+    let base_url  = format!("wss://{}/client/hubs/conversations?access_token={}" ,host, access_token) ;
+
+    let mut request = base_url.into_client_request().unwrap();
+    request.headers_mut().insert(SEC_WEBSOCKET_PROTOCOL, HeaderValue::from_static("json.reliable.webpubsub.azure.v1")); // Or other modifications
+    //let Ok((target_ws, _)) = 
+    
+    match connect_async(request) .await {
+        Ok(target_ws) => {
+            
+            let (mut client_sender, mut client_receiver) = socket.split();
+            let (mut server_sender, mut server_receiver) = target_ws.0.split();
+            let server_to_client = async move {
+                while let Some(Ok(msg)) = server_receiver.next().await {
+                    let _ = client_sender.send(from_tungstenite(msg).unwrap()).await;
+                }
+            };
+            let client_to_server = async move {
+                while let Some(Ok(msg)) = client_receiver.next().await {
+                    let _ = server_sender.send(into_tungstenite(msg)).await;
+                }
+            };
+            tokio::join!(client_to_server, server_to_client);
+        },
+        Err(err) => {
+            eprintln!("Error connecting to target: {}", err);
+            return;
+        }
+    }
+    
+} 
+ 
+ 
+
+fn into_tungstenite(msg:Message) -> ts::Message {
+    match msg {
+        Message::Text(text) => ts::Message::Text(text),
+        Message::Binary(binary) => ts::Message::Binary(binary),
+        Message::Ping(ping) => ts::Message::Ping(ping),
+        Message::Pong(pong) => ts::Message::Pong(pong),
+        Message::Close(Some(close)) => ts::Message::Close(Some(ts::protocol::CloseFrame {
+            code: ts::protocol::frame::coding::CloseCode::from(close.code),
+            reason: close.reason,
+        })),
+        Message::Close(None) => ts::Message::Close(None),
+    }
+}
+
+fn from_tungstenite(message: ts::Message) -> Option<Message> {
+    match message {
+        //ts::Message::Text(text) => Some(Message::Text( r#"{"type":"message","from":"server","dataType":"json","data":"#.to_string() + text.as_str() + "}")),
+        ts::Message::Text(text) => Some(Message::Text(text)),
+        ts::Message::Binary(binary) => Some(Message::Binary(binary)),
+        ts::Message::Ping(ping) => Some(Message::Ping(ping)),
+        ts::Message::Pong(pong) => Some(Message::Pong(pong)),
+        ts::Message::Close(Some(close)) => Some(Message::Close(Some(CloseFrame {
+            code: close.code.into(),
+            reason: close.reason,
+        }))),
+        ts::Message::Close(None) => Some(Message::Close(None)),
+        // we can ignore `Frame` frames as recommended by the tungstenite maintainers
+        // https://github.com/snapview/tungstenite-rs/issues/268
+        ts::Message::Frame(_) => None,
+    }
 }
 
 /// Forwards the request to the auth provider

@@ -60,6 +60,8 @@ pub struct Context {
     cf_turnstile: Option<CfTurnstile>,
     /// Arkose endpoint
     arkose_endpoint: Option<String>,
+    /// Websocket endpoint
+    websocket_endpoint: Option<String>,
     /// Enable Arkose GPT-3.5 experiment
     arkose_gpt3_experiment: bool,
     /// Enable Arkose GPT-3.5 experiment solver
@@ -140,6 +142,11 @@ impl Context {
     /// Get the arkose gpt3 experiment solver
     pub fn arkose_gpt3_experiment_solver(&self) -> bool {
         self.arkose_gpt3_experiment_solver
+    }
+
+    /// Get websocket endpoint
+    pub fn websocket_endpoint(&self) ->  Option<&str> {
+        self.websocket_endpoint.as_deref()
     }
 
     /// Get the arkose context

@@ -1,0 +1,29 @@
+{
+    "name": "Rust Development",
+    "image": "mcr.microsoft.com/devcontainers/rust:dev-bullseye",
+    "mounts": [
+      {
+        "source": "dind-var-lib-docker-${devcontainerId}",
+        "target": "/var/lib/docker",
+        "type": "volume"
+      }
+    ],
+    "customizations": {
+      "vscode": {
+        "extensions": [
+            "rust-lang.rust-analyzer", 
+            "chunsen.bracket-select",
+            "FittenTech.Fitten-Code",
+            "tamasfe.even-better-toml"
+        ]
+      }
+    },
+    "forwardPorts": [],
+    "containerEnv": {
+      "TZ": "Asia/Shanghai"
+    },
+    "postCreateCommand": "cargo build",
+    "features":{
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    }
+  }

@@ -15,6 +15,8 @@ pub struct Conf {
     pub unofficial_api: Option<String>,
     /// Client proxy. Format: protocol://user:pass@ip:port
     pub proxy: Option<String>,
+    /// Config wss endpoint. Format: wss://example.com
+    pub websocket_endpoint: Option<String>,
     /// About the solver client by ArkoseLabs
     pub arkose_solver: Solver,
     /// About the solver client key by ArkoseLabs

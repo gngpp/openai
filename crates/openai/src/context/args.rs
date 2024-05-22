@@ -84,6 +84,10 @@ pub struct Args {
     #[builder(default = false)]
     pub(crate) enable_arkose_proxy: bool,
 
+    ///     websocket endpoint
+    #[builder(setter(into), default = Some("ws://127.0.0.1:7999".to_string()))]
+    pub(super) websocket_endpoint: Option<String>,
+
     /// Cloudflare captcha site key
     #[builder(setter(into), default)]
     pub(crate) cf_site_key: Option<String>,

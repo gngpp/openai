@@ -38,6 +38,7 @@ pub enum Action {
 #[derive(Serialize, TypedBuilder)]
 pub struct ConversationMode<'a> {
     pub kind: &'a str,
+    pub gizmo_id:Option<&'a str>,
 }
 
 #[derive(Serialize, TypedBuilder)]

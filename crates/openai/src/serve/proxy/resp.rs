@@ -9,6 +9,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::cookie;
 use axum_extra::extract::cookie::Cookie;
+use regex::Regex;
 use serde_json::Value;
 
 use crate::serve::error::ResponseError;
@@ -61,8 +62,36 @@ pub(crate) async fn response_convert(
         }
     }
 
+    // Modify ws endpoint response 
+    if let Some(ws_up_stream) = with_context!(websocket_endpoint) {
+        if !ws_up_stream.is_empty() 
+        && resp.inner.headers().get(header::CONTENT_TYPE).unwrap().to_str().unwrap().eq("application/json")
+        && ( resp.inner.url().path().contains("register-websocket") ||  resp.inner.url().path().ends_with("/backend-api/conversation")) {
+            let mut json = resp
+            .inner
+            .text()
+            .await
+            .map_err(ResponseError::InternalServerError)?;
+
+            let re = Regex::new(r"wss://([^/]+)/client/hubs/conversations\?").unwrap();
+
+            if let Some(caps) = re.captures(&json) {
+                if let Some(matched) = caps.get(1) {
+                    let matched_str = matched.as_str();
+                    let replacement = format!("{}/client/hubs/conversations?host={}&", ws_up_stream, matched_str);
+                    json = re.replace(&json, replacement.as_str()).to_string();
+                }
+            }
+            return Ok(builder
+                .body(StreamBody::new(Body::from(json)))
+                .map_err(ResponseError::InternalServerError)?
+                .into_response());
+            
+        }
+
+    } 
     // Modify files endpoint response
-    if with_context!(enable_file_proxy) && resp.inner.url().path().contains("/backend-api/files") {
+      if with_context!(enable_file_proxy) && resp.inner.url().path().contains("/backend-api/files") {
         let url = resp.inner.url().clone();
         // Files endpoint handling
         let mut json = resp

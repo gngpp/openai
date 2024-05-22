@@ -22,6 +22,16 @@ pub fn parse_url(s: &str) -> anyhow::Result<String> {
         _ => anyhow::bail!("Unsupported protocol: {}", protocol),
     }
 }
+// websocket url parse
+pub fn parse_websocket_url(s: &str) -> anyhow::Result<String> {
+    let url = url::Url::parse(s)
+        .context("The WebSocket Proxy Url format must be `ws[s]://user:pass@ip:port`")?;
+    let protocol = url.scheme().to_string();
+    match protocol.as_str() {
+        "wss" | "ws"   => Ok(s.to_string()),
+        _ => anyhow::bail!("Unsupported protocol: {}", protocol),
+    }
+}
 
 // proxy proto, format: proto|type, support proto: all/api/auth/arkose, support type: ip/url/cidr
 pub fn parse_proxies_url(s: &str) -> anyhow::Result<Vec<proxy::Proxy>> {

@@ -121,6 +121,7 @@ impl From<GPTModel> for Type {
         match value {
             GPTModel::Gpt35 => Type::GPT3,
             GPTModel::Gpt4 | GPTModel::Gpt4Mobile => Type::GPT4,
+            GPTModel::GptGizmo => Type::GPT4,
         }
     }
 }

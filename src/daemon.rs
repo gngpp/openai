@@ -71,6 +71,7 @@ pub(super) fn serve(mut args: ServeArgs, relative_path: bool) -> anyhow::Result<
         .cf_secret_key(args.cf_secret_key)
         .enable_webui(args.enable_webui)
         .arkose_endpoint(args.arkose_endpoint)
+        .websocket_endpoint(args.websocket_endpoint)
         .arkose_gpt3_experiment(args.arkose_gpt3_experiment)
         .arkose_gpt3_experiment_solver(args.arkose_gpt3_experiment_solver)
         .arkose_solver(arkose_solver)
@@ -291,6 +292,7 @@ pub(super) fn generate_template(out: Option<PathBuf>) -> anyhow::Result<()> {
         pkey: PathBuf::from("ca/key.pem"),
         arkose_gpt3_experiment: false,
         enable_file_proxy: false,
+        websocket_endpoint: Some("ws://127.0.0.1:7999".to_string()),
         proxies: Some(vec![
             proxy::Proxy::try_from(("all", "socks5://127.0.0.1:8888".parse::<Url>()?))?,
             proxy::Proxy::try_from(("all", "http://127.0.0.1:8889".parse::<Url>()?))?,

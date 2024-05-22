@@ -39,6 +39,7 @@ fn init_context(args: Args) -> Context {
         arkose_endpoint: args.arkose_endpoint,
         arkose_context: ArkoseVersionContext::new(),
         arkose_solver: args.arkose_solver,
+        websocket_endpoint: args.websocket_endpoint,
         arkose_gpt3_experiment: args.arkose_gpt3_experiment,
         arkose_gpt3_experiment_solver: args.arkose_gpt3_experiment_solver,
         arkose_solver_tguess_endpoint: args.arkose_solver_tguess_endpoint,
