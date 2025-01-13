@@ -19,6 +19,7 @@ Reverse engineered `ChatGPT` proxy
 - ChatGPT WebUI
 - Support IP proxy pool
 - Very small memory footprint
+- Solve FunCaptcha with [Capsolver.com](https://dashboard.capsolver.com/passport/register?inviteCode=y7CtB_a-3X6d)
 
 ### Installation
 
